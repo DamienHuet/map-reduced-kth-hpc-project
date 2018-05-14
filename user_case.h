@@ -28,11 +28,7 @@ bool isDigit(char x)
 KEYVAL Map(char* task, int task_len, KEYVAL *word)
 {
   int i=0;
-  while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len)
-  {
-      // Add terminate condition (is last char is letter or digit, segfault!)
-      i++;
-  }
+  while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len) i++;
   if (isLetter(task[i]))
   {
     word->key_len=0;
