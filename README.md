@@ -1,5 +1,5 @@
-# map-reduced-kth-hpc-project
-This repository is related to a course project DD2356 in KTH. The objectove is to implement a map-reduced
+# KTH High-performance computing project: highly parallel map-reduce
+This repository is related to a course project DD2356 in KTH. The objectove is to implement a map-reduce
 highly parallel algorithm using MPI, applied to word counting.
 
 ## Download and make it work (on linux machine)
@@ -15,4 +15,4 @@ Here you should download the two test files wikipedia_test_small.txt and wikiped
 ```
 cd ../map-reduced-project
 ```
-Once this is done, you can use `mpicxx main.c -o main -I.` to build the executable and you can run it with `./main`.
+Once this is done, you can use `mpicxx main.c -o main -I.` to build the executable and you can run it with `mpirun -n 4 ./main` if your processor has 4 cores.
