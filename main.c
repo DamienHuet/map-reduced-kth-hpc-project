@@ -3,44 +3,43 @@
 #include <stdlib.h>
 #include "user_case.h"
 
-int main(int argc, char** argv){
-    MPI_Init(&argc, &argv);
-    //get rank or other head operations
-    
-    /***map and reduce phase***/
-    
-    while(){        //file is not drain after this draw
-        if(rank == 0){
-            //reading from input file
-        }
-        
-        //using scatter(add invalid data in the front to send to root), or scatterv
-        //root won't receive valid data
-        //data type to be specified
-        
-        if(rank != 0){
-            //while task (file block is not drain)
-                //call map
-                //advance offset
-                //call hash function to compute target rank
-                //store <key,value> into buckets for each rank
-                //remember checking redundancy
-        } 
-        //data type to be specified
+#define FILE_RMODE (MPI_MODE_RDONLY)
+#define FILE_NAME "wikipedia_test_small.txt"
+
+#define DEBUG_ON_MASTER
+#define DEBUG_LEN_STR 10 //Max string length we allow the master to read for debugging purposes
+
+int main(int argc, char** argv)
+{
+  MPI_Init(&argc, &argv);
+  MPI_File fh;
+  int rank, num_ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
+
+  // READING THE INPUT
+  if (rank==0)
+  {
+    MPI_Offset file_size;   // Apparently MPI_Offset is just a long long int (%lld)
+    MPI_File_open(MPI_COMM_SELF, FILE_NAME, FILE_RMODE,MPI_INFO_NULL,&fh);
+    MPI_File_get_size(fh, &file_size);
+
+    int task_len=DEBUG_LEN_STR;
+    if (task_len>file_size) task_len=file_size;
+    char task[task_len];
+    MPI_File_read(fh,task,task_len,MPI_CHAR,MPI_STATUS_IGNORE);
+    MPI_File_close(&fh);
+    for (int i=0;i<task_len;i++){
+      printf("%c",task[i]);
+      printf("%d\n",task[i]);
     }
-        
-    /*
-    till now, <key, value> should be stored in each process. 
-    They are orgainized according to target process in combine phase.   
-    */
-    //data type to be specified
-        
-    /***combine phase***/ 
-    //initialize arrays for all to all transmission
-    //call all to all
-    
-    //call reduce
-      
-    //use gather to acquire result
-    MPI_Finalize();
+    printf("\n");
+    KEYVAL word;
+    Map(task,word)
+    printf("%s\n",word.key);
+  }
+
+  MPI_Finalize();
+  return(0);
 }
+
