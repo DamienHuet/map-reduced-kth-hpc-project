@@ -12,6 +12,8 @@
 #define DEBUG_LEN_STR 10
 // Debugging on the small test file
 #define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define DEBUG_RAW_DATA_SCATTER
+#define DEBUG_MAP
 #define BLOCKSIZE 10
 
 int main(int argc, char** argv){
@@ -49,18 +51,33 @@ int main(int argc, char** argv){
             MPI_File_read(fh,buffer+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_CHAR,MPI_STATUS_IGNORE);
         }
         MPI_Scatter(buffer, BLOCKSIZE, MPI_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
-            printf("rank %d receiving: ", rank);
-            for(i=0;i<BLOCKSIZE;i++){
-                printf("%c", *(recver+i));
-            }
+            #ifdef DEBUG_RAW_DATA_SCATTER
+                printf("rank %d receiving: ", rank);
+                // for(i=0;i<BLOCKSIZE;i++){
+                //     printf("%c", *(recver+i));
+                // }
+            #endif
 
         //call map function in all non-root ranks
+        #ifdef DEBUG_MAP
+            if (rank==1)    //Debug on process 1 (as process 0 doesn't have valid data to process)
+            {
+                printf("Hello\n");
+                pKEYVAL word;
+                int block_count=0;
+                (*word)->val=5;
+                // Map(recver,BLOCKSIZE,&block_count,word);
+                // printf("%s\n",word->key);
+                // delete[] word->key;
+            }
+        #endif
 
         if(rank==0){
             //advance offset
             file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
+        // MPI_Barrier(MPI_COMM_WORLD);
         MPI_Bcast(&file_count, 1, MPI_OFFSET, 0, MPI_COMM_WORLD);
     }
 

@@ -1,11 +1,11 @@
 #ifndef USER_CASE
 #define USER_CASE
 
-typedef struct{
+typedef struct KEYVAL{
   int key_len;
   char* key;
   int val;
-} KEYVAL;
+} KEYVAL, **pKEYVAL;
 
 
 // Define letter and digit recognition
@@ -25,10 +25,16 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-KEYVAL Map(char* task, int task_len, KEYVAL *word)
+KEYVAL Map(char* task, int task_len, int *task_count, KEYVAL *word)
 {
-  int i=0;
-  while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len) i++;
+    int i=0;
+  // int i=*task_count;
+  printf("%d\n",i);
+  while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len)
+  {
+      // *task_count++;
+      i++;
+  }
   if (isLetter(task[i]))
   {
     word->key_len=0;
