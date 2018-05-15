@@ -1,11 +1,11 @@
 #ifndef USER_CASE
 #define USER_CASE
 
-typedef struct{
+typedef struct KEYVAL{
   int key_len;
-  char key;
+  char* key;
   int val;
-} KEYVAL;
+} KEYVAL, *pKEYVAL;
 
 
 // Define letter and digit recognition
@@ -13,7 +13,8 @@ typedef struct{
 bool isLetter(char x)
 {
   bool isletter=0;
-  if (((int) x > 95) && ((int) x < 123 ) && ((int) x > 64) && ((int) x < 91)) isletter=1;
+  // printf("%d\n", x);
+  if (((int) x > 95) && ((int) x < 123 ) || ((int) x > 64) && ((int) x < 91)) isletter=1;
   return(isletter);
 }
 
@@ -24,26 +25,30 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-void Map(char* task,KEYVAL *word)
+void Map(char* task, int task_len, int *task_count, KEYVAL *word)
 {
-  int i=0;
-  while(!isDigit(task[i]) || !isLetter(task[i])) i++;
-  if (isLetter(task[i]))
-  {
     word->key_len=0;
-    while (isLetter(task[i+word->key_len])) word->key_len++;
-    word->key=malloc(word->key_len*sizeof(char));
+    word->val=0;
+    int i=*task_count;
+    while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len)
+    {
+      *task_count++;
+      i++;
+    }
+    if (isLetter(task[i]))
+    {
+    while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+    word->key =  new char[word->key_len];
     for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
-  }
-  if (isDigit(task[i]))
-  {
-    word.key_len=0;
-    while (isDigit(task[i+j])) word.key_len++;
-    word.key=malloc(word.key_len*sizeof(char));
-    for(int j=0;j<word->key_len;j++) word.key[j]=task[i+j];
-  }
-  word.val=1;
-  return(word);
+    }
+    if (isDigit(task[i]))
+    {
+    while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+    word->key = new char[word->key_len];
+    for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
+    }
+    *task_count+=word->key_len;
+    word->val=1;
 }
 
 #endif
