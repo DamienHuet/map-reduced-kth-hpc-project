@@ -74,13 +74,12 @@ int main(int argc, char** argv){
             }
         #endif
 
+        file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
             //advance offset
-            file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
         // MPI_Barrier(MPI_COMM_WORLD);
-        MPI_Bcast(&file_count, 1, MPI_OFFSET, 0, MPI_COMM_WORLD);
     }
 
     free(buffer);
