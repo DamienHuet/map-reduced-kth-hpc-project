@@ -36,7 +36,7 @@ int main(int argc, char** argv){
     //all variables created here
     buffer = new char[BLOCKSIZE*num_ranks];
     KEYVAL* word = new KEYVAL[1];
-    int block_count=0;
+    int block_count;
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
@@ -45,9 +45,9 @@ int main(int argc, char** argv){
     while(file_count < file_size - BLOCKSIZE){
         //reading from input file
         if(rank == 0){
-            MPI_File_read(fh,buffer+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_CHAR,MPI_STATUS_IGNORE);
+            MPI_File_read(fh,buffer+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
         }
-        MPI_Scatter(buffer, BLOCKSIZE, MPI_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+        MPI_Scatter(buffer, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
             #if DEBUG_SCATTER
                 if(rank != 0){
                     for(i=0;i<BLOCKSIZE;i++){
@@ -69,26 +69,22 @@ int main(int argc, char** argv){
                 {
                     //map function here
                     //don't define variable inside while loop
-
                     fflush(stdout);
-                    // if (file_count==0*BLOCKSIZE*(num_ranks - 1)){
-                        printf("Block processed: ");
-                        for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
-                        printf("\n");
-                        block_count=1;
-                        // printf("block_count before Map = %d\n",block_count);
-                        Map(recver,BLOCKSIZE,&block_count,word);
-                        // printf("block_count after Map = %d\n",block_count);
-                        printf("key_len=%d\n",word->key_len);
-                        printf("Word exctracted: ");
+                    printf("Block processed: ");
+                    for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
+                    printf("\n");
+                    printf("Word(s) exctracted: ");
+                    block_count=0;
+                    while (block_count<BLOCKSIZE){
+                        if (block_count!=0) printf("  ---  ");
+                        Map(recver,BLOCKSIZE,block_count,word);
                         for(int k=0;k<word->key_len;k++) printf("%c",word->key[k]);
-                        printf("\n\n");
-                        if(word->key_len!=0) delete[] word->key;
-                    // }
+                    }
+                    printf("\n\n");
+                    if(word->key_len!=0) delete[] word->key;
                 }
 
             #endif
-
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
