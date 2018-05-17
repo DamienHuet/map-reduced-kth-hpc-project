@@ -13,8 +13,8 @@ typedef struct KEYVAL{
 bool isLetter(char x)
 {
   bool isletter=0;
-  // printf("%d\n", x);
-  if (((unsigned int) x > 95) && ((unsigned int) x < 123 ) || ((unsigned int) x > 64) && ((unsigned int) x < 91)) isletter=1;
+  // printf("%u\n", x);
+  if ((((unsigned int) x > 96) && ((unsigned int) x < 123 )) || (((unsigned int) x > 64) && ((unsigned int) x < 91))) isletter=1;
   return(isletter);
 }
 

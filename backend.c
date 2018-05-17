@@ -35,12 +35,18 @@ int main(int argc, char** argv){
     /***Local map and reduce phase***/
     //all variables created here
     buffer = new char[BLOCKSIZE*num_ranks];
-    KEYVAL* word = new KEYVAL[1];
+    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
     int block_count;
+    int count_words=0;
+    int prev_block_count;
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
     file_count = 0;
+
+    #if DEBUG_MAP
+        if (rank==1) printf("Data received by process 1:\n");
+    #endif
 
     while(file_count < file_size - BLOCKSIZE){
         //reading from input file
@@ -64,33 +70,59 @@ int main(int argc, char** argv){
                 }
             #endif
 
+            // Mapping of the data
             #if DEBUG_MAP
                 if (rank==1)    //Debug on process 1
                 {
-                    //map function here
-                    //don't define variable inside while loop
                     fflush(stdout);
-                    printf("Block processed: ");
+                    // Have a simple visualization of what Map does
                     for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
-                    printf("\n");
-                    printf("Word(s) exctracted: ");
-                    block_count=0;
-                    while (block_count<BLOCKSIZE){
-                        if (block_count!=0) printf("  ---  ");
-                        Map(recver,BLOCKSIZE,block_count,word);
-                        for(int k=0;k<word->key_len;k++) printf("%c",word->key[k]);
-                    }
-                    printf("\n\n");
-                    if(word->key_len!=0) delete[] word->key;
+                    printf(" - ");
+                    // Comment the above two lines and uncomment the below lines to have a deeper vision of the work done by Map
+                //     printf("Block processed: ");
+                //     for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
+                //     printf("\n");
+                //     printf("Word(s) exctracted: ");
+                //     block_count=0;
+                //     while (block_count<BLOCKSIZE){
+                //         prev_block_count = block_count;
+                //         Map(recver,BLOCKSIZE,block_count,&words[0]);
+                //         if(prev_block_count!=0 && words[0].key_len!=0) printf ("  ---  ");
+                //         for(int k=0;k<words[0].key_len;k++) printf("%c",words[0].key[k]);
+                //     }
+                //     printf("\n\n");
+                //     if(words[0].key_len!=0) delete[] words[0].key;
                 }
-
             #endif
+            if (rank!=0)
+            {
+                block_count=0;
+                while(block_count<BLOCKSIZE){
+                    words[count_words].key_len=0;
+                    Map(recver,BLOCKSIZE,block_count,&words[count_words]);
+                    if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
+                }
+            }
+            
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
     }
+
+    #if DEBUG_MAP
+        // Show the mapped data by process 1
+        if (rank==1)
+        {
+            printf("\n\n\nWords mapped by process 1:\n");
+            for(int i=0;i<count_words;i++){
+                for(int j=0;j<words[i].key_len;j++) printf("%c",words[i].key[j]);
+                printf("  -  ");
+            }
+            printf("\n");
+        }
+    #endif
 
     #if DEBUG_SCATTER
         delete [] outbuf;
@@ -111,6 +143,12 @@ int main(int argc, char** argv){
     //call all to all
 
     //call reduce
+
+    // Free the mapped data
+    if (rank!=0){
+            for(int i=0;i<count_words;i++) delete[] words[i].key;
+    }
+    delete[] words;
 
     //use gather to acquire result
     MPI_Finalize();
