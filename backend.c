@@ -5,15 +5,16 @@
 
 #define FILE_RMODE (MPI_MODE_RDONLY)
 #define FILE_NAME "wikipedia_test_small.txt"
-#define BLOCKSIZE 10
+#define BLOCKSIZE 100
 //debug configuration
 #define DEBUG_SCATTER 0
 #define DEBUG_MAP 0
+#define DEBUG_ALL2ALL 1
 
 int main(int argc, char** argv){
     //get rank or other head operations
     int rank, num_ranks;
-    char* buffer;
+    char* buff;
     char* recver;
 
     MPI_Init(&argc, &argv);
@@ -32,33 +33,50 @@ int main(int argc, char** argv){
     //printf("Size is %lld.\n", file_size);
 
     /***Local map and reduce phase***/
-    //all variables created here
-    buffer = new char[BLOCKSIZE*num_ranks];
-    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
-    KEYVAL* allSend;
-    KEYVAL* allrecv;
     int count;
     int block_count;
     int count_words=0;
     int prev_block_count;
-    int* allcount = new int[num_ranks];
-    int* alldisp = new int[num_ranks];
+    
+    //variable for input and scatter
+    buff = new char[BLOCKSIZE*num_ranks];
+    recver = new char[BLOCKSIZE];
+    
+    //variable for map and shift
+    
+    //variable for all to all
     int* rankRecord;
+    KEYVAL* allSend;
+    KEYVAL* allrecv = new KEYVAL[BLOCKSIZE/2];
+    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
+    int* allcount = new int[num_ranks];
+    int* alllimit = new int[num_ranks];         //use reduce for optimized performance
+    int* alldisp = new int[num_ranks];
+    int* alldispr = new int[num_ranks];
+    for(int i=0;i < num_ranks;i++){
+        *(alldispr+i) = i*BLOCKSIZE/2;
+        *(alllimit+i) = BLOCKSIZE/2;
+    }
+    //defining datatype for all to all 
+    MPI_Datatype MPI_KEYVAL;
+    MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
+    int blocklen[2] = { 1, 20};
+    MPI_Aint disp[2];
+    disp[0] = (MPI_Aint) &(allSend->val) - (MPI_Aint) allSend;
+    disp[1] = (MPI_Aint) &(allSend->key) - (MPI_Aint) allSend;
+    MPI_Type_create_struct(2, blocklen, disp, type, &MPI_KEYVAL);
+    MPI_Type_commit(&MPI_KEYVAL);
+    
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
     file_count = 0;
-
-    #if DEBUG_MAP
-        if (rank==1) printf("Data received by process 1:\n");
-    #endif
-
     while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
         /***input and scatter phase***/
         if(rank == 0){
-            MPI_File_read(fh,buffer+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
+            MPI_File_read(fh,buff+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
         }
-        MPI_Scatter(buffer, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+        MPI_Scatter(buff, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         #if DEBUG_SCATTER
             if(rank != 0){
                 for(int i=0;i<BLOCKSIZE;i++){
@@ -114,8 +132,7 @@ int main(int argc, char** argv){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
         
-        /***all to all comm. phase***/
-        /*
+        /***all to all comm. phase***/      
         allSend = new KEYVAL[count_words];
         rankRecord = new int[count_words];
         for(int i=0;i<count_words;i++){
@@ -133,33 +150,29 @@ int main(int argc, char** argv){
                 }
             }
             allcount[i] = block_count;
-        }
-    
-        //defining datatype for all to all 
-        MPI_Datatype MPI_KEYVAL;
-        MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
-        int blocklen[2] = { 1, 20};
-        MPI_Aint disp[2];
-        disp[0] = &(allSend->val) - allSend;
-        disp[1] = &(allSend->key) - allSend;
-        MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
-        MPI_Type_commit(&MPI_KEYVAL);
+        }  
         
+        /*for(int i=0;i<num_ranks;i++){
+            printf("%d, %d, %d, %d \n", allcount[i], alldisp[i], alllimit[i], alldispr[i]);
+        }
+        printf("%d \n", num_ranks);
+        */
         MPI_Alltoallv(  allSend, allcount, alldisp,
                         MPI_KEYVAL,
-                        allrecv, 
-                        /****
-                        I didn't figure how to configure recvcnts and rdispls, may be you can take a look
-                        API indicates 
-                        recvcounts: integer array equal to the group size specifying the maximum number of elements that can be received from each processor
-                        rdispls: integer array (of length group size). Entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i 
-                        Now I have two ideals:
-                        1) assign memory according to worst case analysis
-                        2) collect data size from all processes using reduction to assign memory
-                        Since I changed your classes, map function is not ready now, so may be you can try it.
-                        ****/
-                        //MPI_KEYVAL,
-                        //MPI_COMM_WORLD);
+                        allrecv, alllimit, alldispr,
+                        MPI_KEYVAL,
+                        MPI_COMM_WORLD);              
+        #if DEBUG_ALL2ALL
+        for(int i=0;i<num_ranks*BLOCKSIZE/2;i++){
+            if((allrecv+i)->key_len>0){
+                printf("<");
+                for(int j=0;j<(allrecv+i)->key_len;j++) printf("%c", (allrecv+i)->key[j]);
+                printf(",");
+                printf("%d",(allrecv+i)->val);
+                printf("> \n");
+            }
+        }
+        #endif                        
     }
 
     #if DEBUG_MAP
@@ -175,12 +188,15 @@ int main(int argc, char** argv){
         }
     #endif
 
+    //use gather to acquire result
+    MPI_Finalize();
+    
     #if DEBUG_SCATTER
         delete [] outbuf;
     #endif
 
-    delete [] buffer;
-
+    delete [] buff;
+    delete [] recver;
     
     /*
     till now, <key, value> should be stored in each process.
@@ -195,13 +211,7 @@ int main(int argc, char** argv){
     //call reduce
 
     // Free the mapped data
-    if (rank!=0){
-            for(int i=0;i<count_words;i++) delete[] words[i].key;
-    }
     delete[] words;
-
-    //use gather to acquire result
-    MPI_Finalize();
 
     return 0;
 }
