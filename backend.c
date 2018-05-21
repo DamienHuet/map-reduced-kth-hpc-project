@@ -37,13 +37,13 @@ int main(int argc, char** argv){
     int block_count;
     int count_words=0;
     int prev_block_count;
-    
+
     //variable for input and scatter
     buff = new char[BLOCKSIZE*num_ranks];
     recver = new char[BLOCKSIZE];
-    
+
     //variable for map and shift
-    
+
     //variable for all to all
     int* rankRecord;
     KEYVAL* allSend;
@@ -57,7 +57,7 @@ int main(int argc, char** argv){
         *(alldispr+i) = i*BLOCKSIZE/2;
         *(alllimit+i) = BLOCKSIZE/2;
     }
-    //defining datatype for all to all 
+    //defining datatype for all to all
     MPI_Datatype MPI_KEYVAL;
     MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
     int blocklen[2] = { 1, 20};
@@ -66,7 +66,7 @@ int main(int argc, char** argv){
     disp[1] = (MPI_Aint) &(allSend->key) - (MPI_Aint) allSend;
     MPI_Type_create_struct(2, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
-    
+
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
@@ -89,7 +89,7 @@ int main(int argc, char** argv){
                     }
                 }
                 outbuf[BLOCKSIZE] = '\0';
-                printf("rank %d receiving: %s \n", rank, outbuf);             
+                printf("rank %d receiving: %s \n", rank, outbuf);
             }
         #endif
         #if DEBUG_MAP
@@ -115,7 +115,7 @@ int main(int argc, char** argv){
                 //     if(words[0].key_len!=0) delete[] words[0].key;
             }
         #endif
-        
+
         /***mapping and shift phase***/
         if (rank!=0)
         {
@@ -125,14 +125,15 @@ int main(int argc, char** argv){
                 Map(recver,BLOCKSIZE,block_count,&words[count_words]);
                 if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
-        }            
+        }
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
-        
-        /***all to all comm. phase***/      
+    }
+
+        /***all to all comm. phase***/
         allSend = new KEYVAL[count_words];
         rankRecord = new int[count_words];
         for(int i=0;i<count_words;i++){
@@ -150,30 +151,42 @@ int main(int argc, char** argv){
                 }
             }
             allcount[i] = block_count;
-        }  
-        
-        /*for(int i=0;i<num_ranks;i++){
+        }
+
+        // Send to and receive from the other processes the amount of data that is going to be sent/received
+        MPI_Alltoall(allcount,1,MPI_INT,alllimit,1,MPI_INT,MPI_COMM_WORLD);
+        // Calculate the new displacement and store it in alldispr
+        count=0;
+        for(int i=0;i<num_ranks;i++){
+            count+=alllimit[i];
+            alldispr[i]=count;
+        }
+
+        for(int i=0;i<num_ranks;i++){
             printf("%d, %d, %d, %d \n", allcount[i], alldisp[i], alllimit[i], alldispr[i]);
         }
-        printf("%d \n", num_ranks);
-        */
+        printf("%d \n", rank);
+
+        printf("hello1, rank: %d\n",rank);
         MPI_Alltoallv(  allSend, allcount, alldisp,
                         MPI_KEYVAL,
-                        allrecv, alllimit, alldispr,
+                        allrecv,alllimit,alldispr,
                         MPI_KEYVAL,
-                        MPI_COMM_WORLD);              
+                        MPI_COMM_WORLD);
+        printf("hello2, rank: %d\n", rank);
         #if DEBUG_ALL2ALL
         for(int i=0;i<num_ranks*BLOCKSIZE/2;i++){
-            if((allrecv+i)->key_len>0){
-                printf("<");
-                for(int j=0;j<(allrecv+i)->key_len;j++) printf("%c", (allrecv+i)->key[j]);
-                printf(",");
-                printf("%d",(allrecv+i)->val);
-                printf("> \n");
-            }
+            printf("rank=%d, i=%d, (allrecv+i)->key_len=%d\n", rank, i,(allrecv+i)->key_len);
+            // if((allrecv+i)->key_len>0){
+            //     printf("<");
+            //     for(int j=0;j<(allrecv+i)->key_len;j++) printf("%c", (allrecv+i)->key[j]);
+            //     printf(",");
+            //     printf("%d",(allrecv+i)->val);
+            //     printf("> \n");
+            // }
         }
-        #endif                        
-    }
+        #endif
+    // }
 
     #if DEBUG_MAP
         // Show the mapped data by process 1
@@ -190,28 +203,28 @@ int main(int argc, char** argv){
 
     //use gather to acquire result
     MPI_Finalize();
-    
+
     #if DEBUG_SCATTER
         delete [] outbuf;
     #endif
 
-    delete [] buff;
-    delete [] recver;
-    
-    /*
-    till now, <key, value> should be stored in each process.
-    They are orgainized according to target process in combine phase.
-    */
-    //data type to be specified
-
-    /***combine phase***/
-    //initialize arrays for all to all transmission
-    //call all to all
-
-    //call reduce
-
-    // Free the mapped data
-    delete[] words;
+    // delete [] buff;
+    // delete [] recver;
+    //
+    // /*
+    // till now, <key, value> should be stored in each process.
+    // They are orgainized according to target process in combine phase.
+    // */
+    // //data type to be specified
+    //
+    // /***combine phase***/
+    // //initialize arrays for all to all transmission
+    // //call all to all
+    //
+    // //call reduce
+    //
+    // // Free the mapped data
+    // delete[] words;
 
     return 0;
 }
