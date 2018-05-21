@@ -8,12 +8,11 @@
 #define BLOCKSIZE 10
 //debug configuration
 #define DEBUG_SCATTER 0
-#define DEBUG_MAP 1
+#define DEBUG_MAP 0
 
 int main(int argc, char** argv){
     //get rank or other head operations
     int rank, num_ranks;
-    int i=0;
     char* buffer;
     char* recver;
 
@@ -36,9 +35,15 @@ int main(int argc, char** argv){
     //all variables created here
     buffer = new char[BLOCKSIZE*num_ranks];
     KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
+    KEYVAL* allSend;
+    KEYVAL* allrecv;
+    int count;
     int block_count;
     int count_words=0;
     int prev_block_count;
+    int* allcount = new int[num_ranks];
+    int* alldisp = new int[num_ranks];
+    int* rankRecord;
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
@@ -56,7 +61,7 @@ int main(int argc, char** argv){
         MPI_Scatter(buffer, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
             #if DEBUG_SCATTER
                 if(rank != 0){
-                    for(i=0;i<BLOCKSIZE;i++){
+                    for(int i=0;i<BLOCKSIZE;i++){
                         if(*(recver+i) == '\n' ){
                             outbuf[i] = 'E';
                         }else if(*(recver+i) == '\t'){
@@ -94,15 +99,15 @@ int main(int argc, char** argv){
                 //     if(words[0].key_len!=0) delete[] words[0].key;
                 }
             #endif
-            if (rank!=0)
-            {
-                block_count=0;
-                while(block_count<BLOCKSIZE){
-                    words[count_words].key_len=0;
-                    Map(recver,BLOCKSIZE,block_count,&words[count_words]);
-                    if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
-                }
+        if (rank!=0)
+        {
+            block_count=0;
+            while(block_count<BLOCKSIZE){
+                words[count_words].key_len=0;
+                Map(recver,BLOCKSIZE,block_count,&words[count_words]);
+                if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
+        }
             
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
@@ -130,7 +135,47 @@ int main(int argc, char** argv){
 
     delete [] buffer;
 
-    //synchronize all ranks
+    //initialize all to all
+    allSend = new KEYVAL[count_words];
+    rankRecord = new int[count_words];
+    for(int i=0;i<count_words;i++){
+        rankRecord[i] = calculateDestRank(words[i].key, words[i].key_len, num_ranks);
+    }
+    count = 0;
+    for(int i=0;i<num_ranks;i++){
+        block_count = 0;
+        alldisp[i] = count;
+        for(int j=0;j<count_words;j++){
+            if(rankRecord[j] == i){
+                block_count++;
+                allSend[count] = words[j];
+                count++;
+            }
+        }
+        allcount[i] = block_count;
+    }
+    
+    //defining datatype for all to all 
+    MPI_Datatype MPI_KEYVAL;
+    MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
+    int blocklen[2] = { 1, 20};
+    MPI_Aint disp[2];
+    disp[0] = &(allSend->val) - allSend;
+    disp[1] = &(allSend->key) - allSend;
+    MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
+    MPI_Type_commit(&MPI_KEYVAL);
+    
+    MPI_Alltoallv(  allSend, allcount, alldisp,
+                    MPI_KEYVAL,
+                    allrecv, 
+                    /****
+                    I didn't figure how to configure recvcnts and rdispls, may be you can take a look
+                    API indicates 
+                    recvcounts: integer array equal to the group size specifying the maximum number of elements that can be received from each processor
+                    rdispls: integer array (of length group size). Entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i 
+                    ****/
+                    MPI_KEYVAL,
+                    MPI_COMM_WORLD);
 
     /*
     till now, <key, value> should be stored in each process.
