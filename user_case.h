@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #ifndef USER_CASE
 #define USER_CASE
 
@@ -44,7 +46,7 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-void Map(char* task, int task_len, int &task_count, KEYVAL *word)
+void Map(char* task, int task_len, int &task_count, KEYVAL *word) //changed, will have sigmentation fault if world length larger than 20
 {
     word->key_len=0;
     word->val=0;
@@ -54,17 +56,15 @@ void Map(char* task, int task_len, int &task_count, KEYVAL *word)
       task_count++;
       i++;
     }
-    if (isLetter(task[i]))
-    {
-    while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
-    word->key =  new char[word->key_len];
-    for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
+    if (isLetter(task[i])){
+        while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+        //word->key =  new char[word->key_len];
+        for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
     }
-    if (isDigit(task[i]))
-    {
-    while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
-    word->key = new char[word->key_len];
-    for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
+    if (isDigit(task[i])){
+        while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+        //word->key = new char[word->key_len];
+        for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
     }
     task_count+=word->key_len;
     word->val=1;

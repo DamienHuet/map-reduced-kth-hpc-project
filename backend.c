@@ -53,37 +53,35 @@ int main(int argc, char** argv){
         if (rank==1) printf("Data received by process 1:\n");
     #endif
 
-    while(file_count < file_size - BLOCKSIZE){
-        //reading from input file
+    while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
+        /***input and scatter phase***/
         if(rank == 0){
             MPI_File_read(fh,buffer+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
         }
         MPI_Scatter(buffer, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
-            #if DEBUG_SCATTER
-                if(rank != 0){
-                    for(int i=0;i<BLOCKSIZE;i++){
-                        if(*(recver+i) == '\n' ){
-                            outbuf[i] = 'E';
-                        }else if(*(recver+i) == '\t'){
-                            outbuf[i] = 'T';
-                        }else{
-                            outbuf[i] = *(recver+i);
-                        }
+        #if DEBUG_SCATTER
+            if(rank != 0){
+                for(int i=0;i<BLOCKSIZE;i++){
+                    if(*(recver+i) == '\n' ){
+                        outbuf[i] = 'E';
+                    }else if(*(recver+i) == '\t'){
+                        outbuf[i] = 'T';
+                    }else{
+                        outbuf[i] = *(recver+i);
                     }
-                    outbuf[BLOCKSIZE] = '\0';
-                    printf("rank %d receiving: %s \n", rank, outbuf);
                 }
-            #endif
-
-            // Mapping of the data
-            #if DEBUG_MAP
-                if (rank==1)    //Debug on process 1
-                {
-                    fflush(stdout);
-                    // Have a simple visualization of what Map does
-                    for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
-                    printf(" - ");
-                    // Comment the above two lines and uncomment the below lines to have a deeper vision of the work done by Map
+                outbuf[BLOCKSIZE] = '\0';
+                printf("rank %d receiving: %s \n", rank, outbuf);             
+            }
+        #endif
+        #if DEBUG_MAP
+            if (rank==1)    //Debug on process 1
+            {
+                fflush(stdout);
+                // Have a simple visualization of what Map does
+                for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
+                printf(" - ");
+                // Comment the above two lines and uncomment the below lines to have a deeper vision of the work done by Map
                 //     printf("Block processed: ");
                 //     for(int j=0;j<BLOCKSIZE;j++) printf("%c",recver[j]);
                 //     printf("\n");
@@ -97,8 +95,10 @@ int main(int argc, char** argv){
                 //     }
                 //     printf("\n\n");
                 //     if(words[0].key_len!=0) delete[] words[0].key;
-                }
-            #endif
+            }
+        #endif
+        
+        /***mapping and shift phase***/
         if (rank!=0)
         {
             block_count=0;
@@ -107,13 +107,59 @@ int main(int argc, char** argv){
                 Map(recver,BLOCKSIZE,block_count,&words[count_words]);
                 if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
-        }
-            
+        }            
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
+        
+        /***all to all comm. phase***/
+        /*
+        allSend = new KEYVAL[count_words];
+        rankRecord = new int[count_words];
+        for(int i=0;i<count_words;i++){
+            rankRecord[i] = calculateDestRank(words[i].key, words[i].key_len, num_ranks);
+        }
+        count = 0;
+        for(int i=0;i<num_ranks;i++){
+            block_count = 0;
+            alldisp[i] = count;
+            for(int j=0;j<count_words;j++){
+                if(rankRecord[j] == i){
+                    block_count++;
+                    allSend[count] = words[j];
+                    count++;
+                }
+            }
+            allcount[i] = block_count;
+        }
+    
+        //defining datatype for all to all 
+        MPI_Datatype MPI_KEYVAL;
+        MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
+        int blocklen[2] = { 1, 20};
+        MPI_Aint disp[2];
+        disp[0] = &(allSend->val) - allSend;
+        disp[1] = &(allSend->key) - allSend;
+        MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
+        MPI_Type_commit(&MPI_KEYVAL);
+        
+        MPI_Alltoallv(  allSend, allcount, alldisp,
+                        MPI_KEYVAL,
+                        allrecv, 
+                        /****
+                        I didn't figure how to configure recvcnts and rdispls, may be you can take a look
+                        API indicates 
+                        recvcounts: integer array equal to the group size specifying the maximum number of elements that can be received from each processor
+                        rdispls: integer array (of length group size). Entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i 
+                        Now I have two ideals:
+                        1) assign memory according to worst case analysis
+                        2) collect data size from all processes using reduction to assign memory
+                        Since I changed your classes, map function is not ready now, so may be you can try it.
+                        ****/
+                        //MPI_KEYVAL,
+                        //MPI_COMM_WORLD);
     }
 
     #if DEBUG_MAP
@@ -135,48 +181,7 @@ int main(int argc, char** argv){
 
     delete [] buffer;
 
-    //initialize all to all
-    allSend = new KEYVAL[count_words];
-    rankRecord = new int[count_words];
-    for(int i=0;i<count_words;i++){
-        rankRecord[i] = calculateDestRank(words[i].key, words[i].key_len, num_ranks);
-    }
-    count = 0;
-    for(int i=0;i<num_ranks;i++){
-        block_count = 0;
-        alldisp[i] = count;
-        for(int j=0;j<count_words;j++){
-            if(rankRecord[j] == i){
-                block_count++;
-                allSend[count] = words[j];
-                count++;
-            }
-        }
-        allcount[i] = block_count;
-    }
     
-    //defining datatype for all to all 
-    MPI_Datatype MPI_KEYVAL;
-    MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
-    int blocklen[2] = { 1, 20};
-    MPI_Aint disp[2];
-    disp[0] = &(allSend->val) - allSend;
-    disp[1] = &(allSend->key) - allSend;
-    MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
-    MPI_Type_commit(&MPI_KEYVAL);
-    
-    MPI_Alltoallv(  allSend, allcount, alldisp,
-                    MPI_KEYVAL,
-                    allrecv, 
-                    /****
-                    I didn't figure how to configure recvcnts and rdispls, may be you can take a look
-                    API indicates 
-                    recvcounts: integer array equal to the group size specifying the maximum number of elements that can be received from each processor
-                    rdispls: integer array (of length group size). Entry i specifies the displacement relative to recvbuf at which to place the incoming data from process i 
-                    ****/
-                    MPI_KEYVAL,
-                    MPI_COMM_WORLD);
-
     /*
     till now, <key, value> should be stored in each process.
     They are orgainized according to target process in combine phase.
