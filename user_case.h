@@ -1,6 +1,5 @@
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
+#define WORD_LEN 20
 
 #ifndef USER_CASE
 #define USER_CASE
@@ -12,22 +11,22 @@ const unsigned short *key_seed_num = (unsigned short*)key_seed;
 int calculateDestRank(char *word, int length, int num_ranks)
 {
     uint64_t hash = 0;
-    
+
     for (uint64_t i = 0; i < length; i++)
     {
         uint64_t num_char = (uint64_t)word[i];
         uint64_t seed     = (uint64_t)key_seed_num[(i % SEED_LENGTH)];
-        
+
         hash += num_char * seed * (i + 1);
     }
-    
+
     return (int)(hash % (uint64_t)num_ranks);
 }
 
 typedef struct KEYVAL{      //changed
-    int key_len;
+    int key_len = 0;
     int val;
-    char key[100];          //may be we need deep copy for memory efficiency
+    char key[WORD_LEN];
 } KEYVAL;
 
 
@@ -59,12 +58,12 @@ void Map(char* task, int task_len, int &task_count, KEYVAL *word) //changed, wil
       i++;
     }
     if (isLetter(task[i])){
-        while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+        while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len && word->key_len<WORD_LEN) word->key_len++;
         //word->key =  new char[word->key_len];
         for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
     }
     if (isDigit(task[i])){
-        while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len) word->key_len++;
+        while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len && word->key_len<WORD_LEN) word->key_len++;
         //word->key = new char[word->key_len];
         for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
     }
@@ -72,14 +71,4 @@ void Map(char* task, int task_len, int &task_count, KEYVAL *word) //changed, wil
     word->val=1;
 }
 
-void print_KEYVAL(KEYVAL* word){
-    char outbuf[100];
-    for(int i=0;i<word->key_len;i++){               
-        outbuf[i] = word->key[i];
-    }
-    if(word->key_len<100)
-        outbuf[word->key_len] = '\0';
-    outbuf[100] = '\0';
-    printf("    <%s, %d> of len %d \n", outbuf, word->val, word->key_len);      
-}
 #endif

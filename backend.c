@@ -6,6 +6,7 @@
 #define FILE_NAME "wikipedia_test_small.txt"
 #define BLOCKSIZE 100
 //debug configuration
+#define DEBUG_ALL2ALL 1
 
 int main(int argc, char** argv){
 
@@ -39,6 +40,7 @@ int main(int argc, char** argv){
     //variable for all to all
     int cntCnt;
     int cntDsp;
+    int cntRcv;
     int* rankRecord;
     KEYVAL* ataSend;
     KEYVAL* atarecv = new KEYVAL[BLOCKSIZE/2];
@@ -60,10 +62,11 @@ int main(int argc, char** argv){
     disp[0] = (MPI_Aint) &(sample.key_len) - (MPI_Aint) &sample;
     disp[1] = (MPI_Aint) &(sample.val) - (MPI_Aint) &sample;
     disp[2] = (MPI_Aint) (sample.key) - (MPI_Aint) &sample;
-    MPI_Type_create_struct(2, blocklen, disp, type, &MPI_KEYVAL);
+    MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
     
     file_count = 0;
+    count_words= 0;
     while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
         /***input and scatter phase***/
         if(rank == 0){
@@ -73,7 +76,6 @@ int main(int argc, char** argv){
         
         /***mapping and shift phase***/
         block_count=0;
-        count_words=0;
         if (rank!=0)
         {
             while(block_count<BLOCKSIZE){
@@ -87,49 +89,65 @@ int main(int argc, char** argv){
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
-        
-        /***all to all comm. phase***/      
-        ataSend = new KEYVAL[count_words];
-        rankRecord = new int[count_words];
-        for(int i=0;i<count_words;i++){
-            rankRecord[i] = calculateDestRank(words[i].key, words[i].key_len, num_ranks);
-        }
-
-        cntCnt = 0;
-        cntDsp = 0;
-        for(int i=0;i<num_ranks;i++){
-            cntCnt = 0;
-            ataSendDsp[i] = cntDsp;
-            for(int j=0;j<count_words;j++){
-                if(rankRecord[j] == i){
-                    ataSend[cntDsp] = words[j];
-                    cntCnt++;
-                    cntDsp++;                
-                }
-            }
-            ataSendCnt[i] = cntCnt;
-        }  
-        
-        
-        MPI_Alltoallv(  ataSend, ataSendCnt, ataSendDsp,
-                        MPI_KEYVAL,
-                        atarecv, ataRecvCnt, ataRecvDsp,
-                        MPI_KEYVAL,
-                        MPI_COMM_WORLD);  
-          
-        if(rank == 2){
-            for(int i=0;i<num_ranks;i++){
-                printf("for rank %d \n", i);
-                for(int j=0;j<ataSendCnt[i];j++)
-                print_KEYVAL((ataSend+ataSendDsp[i]+j));
-            }
-        }
-                             
     }
+        
+    /***all to all comm. phase***/      
+    ataSend = new KEYVAL[count_words];
+    rankRecord = new int[count_words];
+    for(int i=0;i<count_words;i++){
+        rankRecord[i] = calculateDestRank(words[i].key, words[i].key_len, num_ranks);
+    }
+
+    cntCnt = 0;
+    cntDsp = 0;
+    for(int i=0;i<num_ranks;i++){
+        cntCnt = 0;
+        ataSendDsp[i] = cntDsp;
+        for(int j=0;j<count_words;j++){
+            if(rankRecord[j] == i){
+                ataSend[cntDsp] = words[j];
+                cntCnt++;
+                cntDsp++;                
+            }
+        }
+        ataSendCnt[i] = cntCnt;
+    }  
+        
+    MPI_Alltoall(ataSendCnt,1,MPI_INT,ataRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
+        
+    cntRcv=0;
+    for(int i=0;i<num_ranks;i++){
+        cntRcv+=ataRecvCnt[i];
+        ataRecvDsp[i]=cntRcv;
+    }
+        
+    MPI_Alltoallv(  ataSend, ataSendCnt, ataSendDsp,
+                    MPI_KEYVAL,
+                    atarecv, ataRecvCnt, ataRecvDsp,
+                    MPI_KEYVAL,
+                    MPI_COMM_WORLD);  
+          
+    #if DEBUG_ALL2ALL
+        for(int i=0;i<num_ranks*BLOCKSIZE/2;i++){
+            printf("rank=%d, i=%d, (atarecv+i)->key_len=%d\n", rank, i,(atarecv+i)->key_len);
+            // if((allrecv+i)->key_len>0){
+            //     printf("<");
+            //     for(int j=0;j<(allrecv+i)->key_len;j++) printf("%c", (allrecv+i)->key[j]);
+            //     printf(",");
+            //     printf("%d",(allrecv+i)->val);
+            //     printf("> \n");
+            // }
+        }
+    #endif                          
 
     delete [] buff;
     delete [] recver;
-    delete[] words;
+    delete [] words;
+    delete [] ataSendCnt;
+    delete [] ataRecvCnt;       
+    delete [] ataSendDsp;
+    delete [] ataRecvDsp;
+    
     MPI_Finalize();
 
     return 0;
