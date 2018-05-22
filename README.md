@@ -15,4 +15,4 @@ Here you should download the two test files wikipedia_test_small.txt and wikiped
 ```
 cd ../map-reduced-project
 ```
-Once this is done, you can use `mpicxx main.c -o main -I.` to build the executable and you can run it with `./main`.
+Once this is done, you can use `mpicxx backend.c -o be-I. --std=c++11` to build the executable and you can run it with `mpirun -n 4 ./be` if you have four cores, for example.

@@ -6,13 +6,14 @@
 #define FILE_NAME "wikipedia_test_small.txt"
 #define BLOCKSIZE 100
 //debug configuration
-#define DEBUG_ALL2ALL 1
+#define DEBUG_ALL2ALL 0
+#define SHOW_RESULT 1
 
 int main(int argc, char** argv){
 
     MPI_Init(&argc, &argv);
-  
-    //get rank or other head operations  
+
+    //get rank or other head operations
     int rank, num_ranks;
     MPI_File fh;
     MPI_Offset file_size, file_count;
@@ -27,16 +28,23 @@ int main(int argc, char** argv){
     }
     MPI_Bcast(&file_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
     //printf("Size is %lld.\n", file_size);
-    
+
     //variable for input and scatter
     char* buff = new char[BLOCKSIZE*num_ranks];
     char* recver = new char[BLOCKSIZE];
-    
+
     //variable for map and shift
     int block_count;
     int count_words=0;
     KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
-    
+
+    // variable for gather
+    int TotNbWords;
+    int LocNbWords;
+    KEYVAL* gatherRcv;
+    int* gatherRecvCnt = new int[num_ranks];
+    int* gatherRecvDsp = new int[num_ranks];
+
     //variable for all to all
     int cntCnt;
     int cntDsp;
@@ -44,7 +52,7 @@ int main(int argc, char** argv){
     int* rankRecord;
     KEYVAL* ataSend;
     KEYVAL* atarecv;
-  
+
     int* ataSendCnt = new int[num_ranks];
     int* ataRecvCnt = new int[num_ranks];         //use reduce for optimized performance
     int* ataSendDsp = new int[num_ranks];
@@ -53,7 +61,7 @@ int main(int argc, char** argv){
         *(ataRecvDsp+i) = i*BLOCKSIZE/2;
         *(ataRecvCnt+i) = BLOCKSIZE/2;
     }
-    //defining datatype for all to all 
+    //defining datatype for all to all
     KEYVAL sample;
     MPI_Datatype MPI_KEYVAL;
     MPI_Datatype type[3] = { MPI_INT, MPI_INT, MPI_CHAR};
@@ -64,7 +72,7 @@ int main(int argc, char** argv){
     disp[2] = (MPI_Aint) (sample.key) - (MPI_Aint) &sample;
     MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
-    
+
     file_count = 0;
     count_words= 0;
     while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
@@ -72,26 +80,26 @@ int main(int argc, char** argv){
         if(rank == 0){
             MPI_File_read(fh,buff+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
         }
-        MPI_Scatter(buff, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);    
-        
+        MPI_Scatter(buff, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+
         /***mapping and shift phase***/
         block_count=0;
         if (rank!=0)
         {
             while(block_count<BLOCKSIZE){
                 words[count_words].key_len=0;
-                Map(recver,BLOCKSIZE,block_count,&words[count_words]);
+                Map(recver,BLOCKSIZE,block_count,words+count_words);
                 if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
-        }            
+        }
         //advance offset
         file_count = file_count +  BLOCKSIZE*(num_ranks - 1);
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
     }
-        
-    /***all to all comm. phase***/      
+
+    /***all to all comm. phase***/
     ataSend = new KEYVAL[count_words];
     rankRecord = new int[count_words];
     for(int i=0;i<count_words;i++){
@@ -107,54 +115,88 @@ int main(int argc, char** argv){
             if(rankRecord[j] == i){
                 ataSend[cntDsp] = words[j];
                 cntCnt++;
-                cntDsp++;                
+                cntDsp++;
             }
         }
         ataSendCnt[i] = cntCnt;
-    }  
-        
+    }
+
     MPI_Alltoall(ataSendCnt,1,MPI_INT,ataRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
-        
+
     cntRcv=0;
     for(int i=0;i<num_ranks;i++){
         ataRecvDsp[i]=cntRcv;
-        cntRcv+=ataRecvCnt[i];    
+        cntRcv+=ataRecvCnt[i];
     }
     atarecv = new KEYVAL[cntRcv];
-    
+
     #if 0
     if(rank==2){
         for(int i=0;i<num_ranks;i++){
             printf("%d, %d, %d, %d \n", ataSendCnt[i], ataSendDsp[i], ataRecvCnt[i], ataRecvDsp[i]);
             for(int j=0;j<ataSendCnt[i];j++){
-                printf("j=%d, key_len=%d\n",j, (ataSend+ataSendDsp[i]+j)->key_len);               
+                printf("j=%d, key_len=%d\n",j, (ataSend+ataSendDsp[i]+j)->key_len);
             }
-        }    
+        }
     }
     #endif
-        
-    MPI_Alltoallv(  ataSend, ataSendCnt, ataSendDsp,
+
+    MPI_Alltoallv(ataSend, ataSendCnt, ataSendDsp,
                     MPI_KEYVAL,
                     atarecv, ataRecvCnt, ataRecvDsp,
                     MPI_KEYVAL,
-                    MPI_COMM_WORLD);  
-    
+                    MPI_COMM_WORLD);
+
     #if DEBUG_ALL2ALL
-        if(rank==6){
+    // Print the length of the words
+        if(rank==3){
             for(int i=0;i<num_ranks;i++){
                 printf("%d, %d, %d, %d \n", ataSendCnt[i], ataSendDsp[i], ataRecvCnt[i], ataRecvDsp[i]);
                 for(int j=0;j<ataRecvCnt[i];j++){
-                    printf("j=%d, key_len=%d\n",j, (atarecv+ataRecvDsp[i]+j)->key_len);               
+                    printf("j=%d, key_len=%d\n",j, (atarecv+ataRecvDsp[i]+j)->key_len);
                 }
             }
-        }    
-    #endif                          
+        }
+    #endif
+
+    // Call reduce on each process
+    // To be implemented
+
+    // Gather the reduced result on master
+    TotNbWords=0;
+    LocNbWords=0;
+    for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];
+    // MPI_Reduce(&LocNbWords,&TotNbWords,1,MPI_INT,MPI_SUM,0,MPI_COMM_WORLD);
+    MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
+
+    if (rank==0){
+        for(int i=0;i<num_ranks;i++){
+            gatherRecvDsp[i]=TotNbWords;
+            TotNbWords+=gatherRecvCnt[i];
+        }
+        printf("There are %d different words:\n",TotNbWords);
+        gatherRcv = new KEYVAL[TotNbWords];
+    }
+    MPI_Gatherv(atarecv,LocNbWords,
+                    MPI_KEYVAL,
+                    gatherRcv,gatherRecvCnt,gatherRecvDsp,
+                    MPI_KEYVAL,0,MPI_COMM_WORLD);
+
+    #if SHOW_RESULT
+        for(int i=0;i<TotNbWords;i++){
+            printf("<");
+            for(int j=0;j<gatherRcv[i].key_len;j++){
+                printf("%c",gatherRcv[i].key[j]);
+            }
+            printf(",%d>\n",gatherRcv[i].val);
+        }
+    #endif
 
     delete [] buff;
     delete [] recver;
     delete [] words;
     delete [] ataSendCnt;
-    delete [] ataRecvCnt;       
+    delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
     delete [] ataSend;
