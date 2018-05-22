@@ -43,12 +43,12 @@ int main(int argc, char** argv){
     recver = new char[BLOCKSIZE];
 
     //variable for map and shift
+    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
 
     //variable for all to all
     int* rankRecord;
     KEYVAL* allSend;
     KEYVAL* allrecv = new KEYVAL[BLOCKSIZE/2];
-    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
     int* allcount = new int[num_ranks];
     int* alllimit = new int[num_ranks];         //use reduce for optimized performance
     int* alldisp = new int[num_ranks];
@@ -59,24 +59,26 @@ int main(int argc, char** argv){
     }
     //defining datatype for all to all
     MPI_Datatype MPI_KEYVAL;
-    MPI_Datatype type[2] = { MPI_INT, MPI_CHAR};
-    int blocklen[2] = { 1, 20};
-    MPI_Aint disp[2];
-    disp[0] = (MPI_Aint) &(allSend->val) - (MPI_Aint) allSend;
-    disp[1] = (MPI_Aint) &(allSend->key) - (MPI_Aint) allSend;
-    MPI_Type_create_struct(2, blocklen, disp, type, &MPI_KEYVAL);
+    MPI_Datatype type[3] = {MPI_INT, MPI_INT, MPI_CHAR,};
+    int blocklen[3] = {1, 1, 20};
+    MPI_Aint disp[3];
+    disp[0] = (MPI_Aint) &(allSend->key_len) - (MPI_Aint) allSend;
+    disp[1] = (MPI_Aint) &(allSend->val) - (MPI_Aint) allSend;
+    disp[2] = (MPI_Aint) &(allSend->key) - (MPI_Aint) allSend;
+    MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
 
     #if DEBUG_SCATTER
         char* outbuf = new char[BLOCKSIZE+1];
     #endif
     file_count = 0;
-    while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
+    while(file_count < file_size - BLOCKSIZE){
         /***input and scatter phase***/
         if(rank == 0){
             MPI_File_read(fh,buff+BLOCKSIZE,BLOCKSIZE*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
         }
         MPI_Scatter(buff, BLOCKSIZE, MPI_UNSIGNED_CHAR, recver, BLOCKSIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+
         #if DEBUG_SCATTER
             if(rank != 0){
                 for(int i=0;i<BLOCKSIZE;i++){
@@ -122,7 +124,7 @@ int main(int argc, char** argv){
             block_count=0;
             while(block_count<BLOCKSIZE){
                 words[count_words].key_len=0;
-                Map(recver,BLOCKSIZE,block_count,&words[count_words]);
+                Map(recver,BLOCKSIZE,block_count,words+count_words*sizeof(KEYVAL));  //block count is incremented in Map()
                 if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
         }
@@ -131,7 +133,8 @@ int main(int argc, char** argv){
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
-    }
+    }   //End of while loop
+
 
         /***all to all comm. phase***/
         allSend = new KEYVAL[count_words];
@@ -186,7 +189,6 @@ int main(int argc, char** argv){
             // }
         }
         #endif
-    // }
 
     #if DEBUG_MAP
         // Show the mapped data by process 1
@@ -202,29 +204,29 @@ int main(int argc, char** argv){
     #endif
 
     //use gather to acquire result
-    MPI_Finalize();
 
     #if DEBUG_SCATTER
         delete [] outbuf;
     #endif
 
-    // delete [] buff;
-    // delete [] recver;
-    //
-    // /*
-    // till now, <key, value> should be stored in each process.
-    // They are orgainized according to target process in combine phase.
-    // */
-    // //data type to be specified
-    //
-    // /***combine phase***/
-    // //initialize arrays for all to all transmission
-    // //call all to all
-    //
-    // //call reduce
-    //
-    // // Free the mapped data
-    // delete[] words;
+    delete [] buff;
+    delete [] recver;
 
+    /*
+    till now, <key, value> should be stored in each process.
+    They are orgainized according to target process in combine phase.
+    */
+    //data type to be specified
+
+    /***combine phase***/
+    //initialize arrays for all to all transmission
+    //call all to all
+
+    //call reduce
+
+    // Free the mapped data
+    delete[] words;
+
+    MPI_Finalize();
     return 0;
 }

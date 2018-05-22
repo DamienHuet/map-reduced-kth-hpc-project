@@ -47,7 +47,7 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-void Map(char* task, int task_len, int &task_count, KEYVAL *word) //changed, will have sigmentation fault if world length larger than 20
+void Map(char* task, int task_len, int &task_count, KEYVAL *word)
 {
     word->key_len=0;
     word->val=0;
