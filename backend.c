@@ -43,7 +43,7 @@ int main(int argc, char** argv){
     int cntRcv;
     int* rankRecord;
     KEYVAL* ataSend;
-    KEYVAL* atarecv = new KEYVAL[BLOCKSIZE/2];
+    KEYVAL* atarecv;
   
     int* ataSendCnt = new int[num_ranks];
     int* ataRecvCnt = new int[num_ranks];         //use reduce for optimized performance
@@ -57,7 +57,7 @@ int main(int argc, char** argv){
     KEYVAL sample;
     MPI_Datatype MPI_KEYVAL;
     MPI_Datatype type[3] = { MPI_INT, MPI_INT, MPI_CHAR};
-    int blocklen[3] = { 1,1,100};
+    int blocklen[3] = { 1,1,20};
     MPI_Aint disp[3];
     disp[0] = (MPI_Aint) &(sample.key_len) - (MPI_Aint) &sample;
     disp[1] = (MPI_Aint) &(sample.val) - (MPI_Aint) &sample;
@@ -117,27 +117,37 @@ int main(int argc, char** argv){
         
     cntRcv=0;
     for(int i=0;i<num_ranks;i++){
-        cntRcv+=ataRecvCnt[i];
         ataRecvDsp[i]=cntRcv;
+        cntRcv+=ataRecvCnt[i];    
     }
+    atarecv = new KEYVAL[cntRcv];
+    
+    #if 0
+    if(rank==2){
+        for(int i=0;i<num_ranks;i++){
+            printf("%d, %d, %d, %d \n", ataSendCnt[i], ataSendDsp[i], ataRecvCnt[i], ataRecvDsp[i]);
+            for(int j=0;j<ataSendCnt[i];j++){
+                printf("j=%d, key_len=%d\n",j, (ataSend+ataSendDsp[i]+j)->key_len);               
+            }
+        }    
+    }
+    #endif
         
     MPI_Alltoallv(  ataSend, ataSendCnt, ataSendDsp,
                     MPI_KEYVAL,
                     atarecv, ataRecvCnt, ataRecvDsp,
                     MPI_KEYVAL,
                     MPI_COMM_WORLD);  
-          
+    
     #if DEBUG_ALL2ALL
-        for(int i=0;i<num_ranks*BLOCKSIZE/2;i++){
-            printf("rank=%d, i=%d, (atarecv+i)->key_len=%d\n", rank, i,(atarecv+i)->key_len);
-            // if((allrecv+i)->key_len>0){
-            //     printf("<");
-            //     for(int j=0;j<(allrecv+i)->key_len;j++) printf("%c", (allrecv+i)->key[j]);
-            //     printf(",");
-            //     printf("%d",(allrecv+i)->val);
-            //     printf("> \n");
-            // }
-        }
+        if(rank==6){
+            for(int i=0;i<num_ranks;i++){
+                printf("%d, %d, %d, %d \n", ataSendCnt[i], ataSendDsp[i], ataRecvCnt[i], ataRecvDsp[i]);
+                for(int j=0;j<ataRecvCnt[i];j++){
+                    printf("j=%d, key_len=%d\n",j, (atarecv+ataRecvDsp[i]+j)->key_len);               
+                }
+            }
+        }    
     #endif                          
 
     delete [] buff;
@@ -147,7 +157,8 @@ int main(int argc, char** argv){
     delete [] ataRecvCnt;       
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
-    
+    delete [] ataSend;
+    delete [] rankRecord;
     MPI_Finalize();
 
     return 0;
