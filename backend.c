@@ -11,7 +11,7 @@
 #define DEBUG_ALL2ALL 0
 
 #define SORT_RESULT 1
-#define SHOW_PROGRESS 0
+#define SHOW_PROGRESS 1
 #define SHOW_RESULT 1
 
 int main(int argc, char** argv){
@@ -84,15 +84,22 @@ int main(int argc, char** argv){
         read_size=((file_size-file_count)/(num_ranks-1));
     }
     #if SHOW_PROGRESS
-    // if (rank==0) printf("Reading file step:\n");
+    if (rank==0){
+         printf("Reading file and mapping steps\n");
+        // printf("0%% -");
+    }
     #endif
     while((file_count < file_size - (num_ranks-1)*read_size) && read_size!=0){
         #if SHOW_PROGRESS
         // if (rank==0){
-        //     printf("%d\n",((int)file_size)/((int)file_count));
-            // for(int j=0;j<10;j++){
-            //     if ((file_size/file_count >= 10*j) && (file_count<10*j*(file_size/file_count)+read_size*(num_ranks-1))) printf(" %d -",10*j);
-            // }
+        //     // printf("%d, %d\n\n",((int)file_size),((int)file_count));
+        //     if (file_count!=0){
+        //         for(int j=1;j<11;j++){
+        //             // if ((10*file_count/file_size >= j) && (file_count<10*j*(file_size/file_count)+read_size*(num_ranks-1))) printf(" %d%% -\n",10*j);
+        //             // printf("j=%d - %lld - %lld || ",j,10*file_count/file_size,10*(file_count-read_size*(num_ranks-1))/file_size);
+        //             if ((10*file_count/file_size >= j) && (10*(file_count-BLOCKSIZE*(num_ranks-1))/file_size < j)) printf(" %d%% - ",10*j);
+        //         }
+        //     }
         // }
         #endif
         /***input and scatter phase***/
@@ -121,13 +128,20 @@ int main(int argc, char** argv){
         }
     }   //--- End of while loop ---//
     if (rank==0){   //Printf reading informations
+        #if SHOW_PROGRESS
+            // printf("100%%\n");
+        #endif
          printf("File size is %lld bytes. ", file_size);
          printf("Number of unread characters (at the end of the file): %lld\n",file_size-file_count);
     }
 
     delete [] buff, recver;
 
+
     /***all to all comm. phase***/
+    #if SHOW_PROGRESS
+        if (rank==0) printf("All to all communication step...\n");
+    #endif
     ataSend = new KEYVAL[count_words];
     rankRecord = new int[count_words];
     for(int i=0;i<count_words;i++){
@@ -191,6 +205,9 @@ int main(int argc, char** argv){
     delete [] ataSend;
 
     // Call reduce on each process
+    #if SHOW_PROGRESS
+        if (rank==0) printf("Reduce step...\n");
+    #endif
     std::vector<KEYVAL> reduceVec;
     reduceVec.clear();
     Reduce(reduceVec, atarecv, cntRcv);
@@ -209,6 +226,9 @@ int main(int argc, char** argv){
     #endif
 
     // Gather the reduced result on master
+    #if SHOW_PROGRESS
+        if (rank==0) printf("Gather to master thread step...\n");
+    #endif
     TotNbWords=0;
     LocNbWords=reduceNb;
     //for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];   //Back when reduce was not implemented
@@ -228,6 +248,9 @@ int main(int argc, char** argv){
                     MPI_KEYVAL,0,MPI_COMM_WORLD);
 
     #if SORT_RESULT
+        #if SHOW_PROGRESS
+            if (rank==0) printf("Result sorting step...\n");
+        #endif
         // If we do serial sort instead of parallel sort...
         if (rank==0){
             quickSort(gatherRcv,0,TotNbWords-1);
@@ -258,7 +281,11 @@ int main(int argc, char** argv){
     delete [] gatherRcv;
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
-    MPI_Finalize();
 
+    #if SHOW_PROGRESS
+        if (rank==0) printf("Job done.\n");
+    #endif
+
+    MPI_Finalize();
     return 0;
 }
