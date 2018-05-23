@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <vector>
 #include "user_case.h"
+#include "toolbox.h"
 
-#define FILE_NAME "wikipedia_test_small.txt"
+#define FILE_NAME "../test_files/wikipedia_test_small.txt"
 #define BLOCKSIZE 100
 //debug configuration
 #define DEBUG_ALL2ALL 0
+#define SORT_RESULT 1
 #define SHOW_RESULT 1
 
 int main(int argc, char** argv){
@@ -28,7 +30,7 @@ int main(int argc, char** argv){
         MPI_File_get_size(fh, &file_size);
     }
     MPI_Bcast(&file_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
-    //printf("Size is %lld.\n", file_size);
+    if (rank==0) printf("File size is %lld bytes.\n", file_size);
 
     //variable for input and scatter
     char* buff = new char[BLOCKSIZE*num_ranks];
@@ -38,13 +40,6 @@ int main(int argc, char** argv){
     int block_count;
     int count_words=0;
     KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
-
-    // variable for gather
-    int TotNbWords;
-    int LocNbWords;
-    KEYVAL* gatherRcv;
-    int* gatherRecvCnt = new int[num_ranks];
-    int* gatherRecvDsp = new int[num_ranks];
 
     //variable for all to all
     int cntCnt;
@@ -74,6 +69,13 @@ int main(int argc, char** argv){
     MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
 
+    // variables for gather (combine phase)
+    int TotNbWords;
+    int LocNbWords;
+    KEYVAL* gatherRcv;
+    int* gatherRecvCnt = new int[num_ranks];
+    int* gatherRecvDsp = new int[num_ranks];
+
     file_count = 0;
     count_words= 0;
     while(file_count < file_size - BLOCKSIZE){  //while loop is containing all to all communication now, finish gathering data from all-to-all to proceed another iteration
@@ -98,7 +100,9 @@ int main(int argc, char** argv){
         if(rank==0){
             MPI_File_seek(fh, file_count, MPI_SEEK_SET);
         }
-    }
+    }   //--- End of while loop ---//
+
+    delete [] buff, recver;
 
     /***all to all comm. phase***/
     ataSend = new KEYVAL[count_words];
@@ -121,6 +125,8 @@ int main(int argc, char** argv){
         }
         ataSendCnt[i] = cntCnt;
     }
+
+    delete [] words;
 
     MPI_Alltoall(ataSendCnt,1,MPI_INT,ataRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
@@ -159,6 +165,7 @@ int main(int argc, char** argv){
             }
         }
     #endif
+    delete [] ataSend;
 
     // Call reduce on each process
     std::vector<KEYVAL> reduceVec;
@@ -170,14 +177,14 @@ int main(int argc, char** argv){
         *(reduceAry+i) = reduceVec.back();
         reduceVec.pop_back();
     }
-    
+    delete [] atarecv;
+
     // To be implemented
 
     // Gather the reduced result on master
     TotNbWords=0;
     LocNbWords=reduceNb;
-    //for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];
-    // MPI_Reduce(&LocNbWords,&TotNbWords,1,MPI_INT,MPI_SUM,0,MPI_COMM_WORLD);
+    //for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];   //Back when reduce was not implemented
     MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
     if (rank==0){
@@ -193,6 +200,13 @@ int main(int argc, char** argv){
                     gatherRcv,gatherRecvCnt,gatherRecvDsp,
                     MPI_KEYVAL,0,MPI_COMM_WORLD);
 
+    #if SORT_RESULT
+        if (rank==0){
+            quickSort(gatherRcv,0,TotNbWords-1);
+        }
+    #endif
+
+
     #if SHOW_RESULT
         for(int i=0;i<TotNbWords;i++){
             printf("<");
@@ -203,15 +217,19 @@ int main(int argc, char** argv){
         }
     #endif
 
-    delete [] buff;
-    delete [] recver;
-    delete [] words;
+    // Moved some of the deletions up in the code to free the unused memory during the execution
+    // delete [] buff;
+    // delete [] recver;
+    // delete [] words;
     delete [] ataSendCnt;
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
-    delete [] ataSend;
+    // delete [] ataSend;
     delete [] rankRecord;
+    delete [] gatherRcv;
+    delete [] gatherRecvCnt;
+    delete [] gatherRecvDsp;
     MPI_Finalize();
 
     return 0;
