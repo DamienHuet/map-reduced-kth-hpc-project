@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <vector>
 #define WORD_LEN 20
 
 #ifndef USER_CASE
@@ -71,4 +72,31 @@ void Map(char* task, int task_len, int &task_count, KEYVAL *word)
     word->val=1;
 }
 
+void Reduce(std::vector<KEYVAL> &vec, KEYVAL* ary, int cnt)
+{
+    int match, equal;
+    for(int i=0;i<cnt;i++){
+        match = 0;
+        for(std::vector<KEYVAL>::iterator it=vec.begin();it!= vec.end();it++){
+            if( (*it).key_len == (ary+i)->key_len){
+                equal = 1;
+                for(int j=0;j < (ary+i)->key_len;j++){
+                    if( (*it).key[j] != (ary+i)->key[j]){
+                        equal = 0;
+                        break;
+                    }
+                }
+                if(equal){
+                    (*it).val++;
+                    match = 1;
+                    break;
+                }
+            }
+        }
+        if(!match){
+            (ary+i)->val = 1;
+            vec.push_back(*(ary+i));
+        }
+    }
+}
 #endif

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <mpi.h>
 #include <stdlib.h>
+#include <vector>
 #include "user_case.h"
 
 #define FILE_NAME "wikipedia_test_small.txt"
@@ -160,12 +161,22 @@ int main(int argc, char** argv){
     #endif
 
     // Call reduce on each process
+    std::vector<KEYVAL> reduceVec;
+    reduceVec.clear();
+    Reduce(reduceVec, atarecv, cntRcv);
+    int reduceNb = reduceVec.size();
+    KEYVAL* reduceAry = new KEYVAL[reduceNb];
+    for(int i=0;i< reduceNb;i++){
+        *(reduceAry+i) = reduceVec.back();
+        reduceVec.pop_back();
+    }
+    
     // To be implemented
 
     // Gather the reduced result on master
     TotNbWords=0;
-    LocNbWords=0;
-    for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];
+    LocNbWords=reduceNb;
+    //for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];
     // MPI_Reduce(&LocNbWords,&TotNbWords,1,MPI_INT,MPI_SUM,0,MPI_COMM_WORLD);
     MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
@@ -177,7 +188,7 @@ int main(int argc, char** argv){
         printf("There are %d different words:\n",TotNbWords);
         gatherRcv = new KEYVAL[TotNbWords];
     }
-    MPI_Gatherv(atarecv,LocNbWords,
+    MPI_Gatherv(reduceAry,LocNbWords,
                     MPI_KEYVAL,
                     gatherRcv,gatherRecvCnt,gatherRecvDsp,
                     MPI_KEYVAL,0,MPI_COMM_WORLD);
