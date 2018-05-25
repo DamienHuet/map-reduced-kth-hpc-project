@@ -13,7 +13,7 @@ int calculateDestRank(char *word, int length, int num_ranks)
 {
     uint64_t hash = 0;
 
-    for (uint64_t i = 0; i < length; i++)
+    for (uint64_t i = 0; i < (uint64_t) length; i++)
     {
         uint64_t num_char = (uint64_t)word[i];
         uint64_t seed     = (uint64_t)key_seed_num[(i % SEED_LENGTH)];
@@ -48,10 +48,10 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-void Map(char* task, int task_len, int &task_count, KEYVAL *word)
+void Map(char* task, int task_len, int &task_count, int &key_len, char* key, int &val)
 {
-    word->key_len=0;
-    word->val=0;
+    key_len=0;
+    val=0;
     int i=task_count;
     while(!isDigit(task[i]) && !isLetter(task[i]) && i<task_len)
     {
@@ -59,17 +59,18 @@ void Map(char* task, int task_len, int &task_count, KEYVAL *word)
       i++;
     }
     if (isLetter(task[i])){
-        while (isLetter(task[i+word->key_len]) && i+word->key_len<task_len && word->key_len<WORD_LEN) word->key_len++;
+        while (isLetter(task[i+key_len]) && i+key_len<task_len && key_len<WORD_LEN) key_len++;
         //word->key =  new char[word->key_len];
-        for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
+        for(int j=0;j<key_len;j++) key[j]=task[i+j];
     }
     if (isDigit(task[i])){
-        while (isDigit(task[i+word->key_len]) && i+word->key_len<task_len && word->key_len<WORD_LEN) word->key_len++;
+        while (isDigit(task[i+key_len]) && i+key_len<task_len && key_len<WORD_LEN) key_len++;
         //word->key = new char[word->key_len];
-        for(int j=0;j<word->key_len;j++) word->key[j]=task[i+j];
+        for(int j=0;j<key_len;j++) key[j]=task[i+j];
     }
-    task_count+=word->key_len;
-    word->val=1;
+    task_count+=key_len;
+    task_count+=1;
+    val=1;
 }
 
 void Reduce(std::vector<KEYVAL> &vec, KEYVAL* ary, int cnt)

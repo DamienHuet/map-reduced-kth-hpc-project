@@ -6,7 +6,7 @@
 #include "toolbox.h"
 
 #define FILE_NAME "../test_files/wikipedia_test_small.txt"
-#define BLOCKSIZE 1000
+#define BLOCKSIZE 500
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
@@ -24,23 +24,15 @@ int main(int argc, char** argv){
     MPI_Offset file_size, file_count;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
-
-    /***Initial and boardcast phase***/
-    if(rank == 0){
-        MPI_File_open(MPI_COMM_SELF, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
-        //--- It would be smart to include a test in case we fail to open the file ---//
-        MPI_File_get_size(fh, &file_size);
-    }
-    MPI_Bcast(&file_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+    MPI_Request ReadFileScatReq;
 
     //variable for input and scatter
-    char* buff = new char[BLOCKSIZE*num_ranks];
-    char* recver = new char[BLOCKSIZE];
+
 
     //variable for map and shift
     int block_count;
     int count_words=0;
-    KEYVAL* words = new KEYVAL[file_size/(2*(num_ranks-1))];  //Worst case scenario is there are one new word every two characters
+    KEYVAL* words;
 
     //variable for all to all
     int cntCnt;
@@ -49,15 +41,19 @@ int main(int argc, char** argv){
     int* rankRecord;
     KEYVAL* ataSend;
     KEYVAL* atarecv;
-
-    int* ataSendCnt = new int[num_ranks];
-    int* ataRecvCnt = new int[num_ranks];         //use reduce for optimized performance
-    int* ataSendDsp = new int[num_ranks];
-    int* ataRecvDsp = new int[num_ranks];
+    int* ataSendCnt;
+    ataSendCnt = new int[num_ranks];
+    int* ataRecvCnt;
+    ataRecvCnt = new int[num_ranks];         //use reduce for optimized performance
+    int* ataSendDsp;
+    ataSendDsp = new int[num_ranks];
+    int* ataRecvDsp;
+    ataRecvDsp = new int[num_ranks];
     for(int i=0;i < num_ranks;i++){
         *(ataRecvDsp+i) = i*BLOCKSIZE/2;
         *(ataRecvCnt+i) = BLOCKSIZE/2;
     }
+
     //defining datatype for all to all
     KEYVAL sample;
     MPI_Datatype MPI_KEYVAL;
@@ -74,68 +70,87 @@ int main(int argc, char** argv){
     int TotNbWords;
     int LocNbWords;
     KEYVAL* gatherRcv;
-    int* gatherRecvCnt = new int[num_ranks];
-    int* gatherRecvDsp = new int[num_ranks];
+    int* gatherRecvCnt;
+    gatherRecvCnt = new int[num_ranks];
+    int* gatherRecvDsp;
+    gatherRecvDsp = new int[num_ranks];
 
-    file_count = 0;
-    count_words= 0;
+    /***Initial and boardcast phase***/
+    // variable for collective reading
     int read_size=BLOCKSIZE;
-    if (file_count >= file_size-(num_ranks-1)*read_size){
-        read_size=((file_size-file_count)/(num_ranks-1));
-    }
+    // char* buff = new char[BLOCKSIZE*num_ranks];
+    char* recver;
+    MPI_File_open(MPI_COMM_WORLD, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_get_size(fh, &file_size);
+    MPI_Aint ColRdSize = BLOCKSIZE * sizeof(char);
+    // MPI_Aint ColRdSize = 1 * sizeof(char);
+    MPI_Aint ColRdExtent = file_size/num_ranks;
+    MPI_Offset ColRdDisp = rank * ColRdExtent;
+    MPI_Datatype contig, filetype;
+    MPI_Type_contiguous(ColRdSize,MPI_CHAR,&contig);
+    MPI_Type_create_resized(contig,0,ColRdExtent,&filetype);
+    MPI_Type_commit(&contig);
+    MPI_Type_commit(&filetype);
+    recver=new char[ColRdSize];
+    words = new KEYVAL[file_size/(2*(num_ranks))];  //Worst case scenario is there are one new word every two characters
+    // if(rank == 0){
+    //     MPI_File_open(MPI_COMM_SELF, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    //     //--- It would be smart to include a test in case we fail to open the file ---//
+    //     MPI_File_get_size(fh, &file_size);
+    // }
+    // MPI_Bcast(&file_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+    MPI_File_set_view(fh,ColRdDisp,MPI_CHAR,filetype,"native",MPI_INFO_NULL);
+        // MPI_File_read_all(fh,buff,read_size,MPI_CHAR,MPI_STATUS_IGNORE);
+    // printf("rank=%d, file size=%lld, ColRdExtent=%ld; file_start=%lld\n",rank,file_size,ColRdExtent,ColRdDisp);
+
+
+    count_words=0;
+    // if (file_count >= file_size-(num_ranks-1)*read_size){
+    //     read_size=((file_size-file_count)/(num_ranks-1));
+    // }
+    // // if (ColRdDisp>(rank+1)*ColRdExtent)
+    // {
+    //     printf("hi from rank %d\n",rank);
+    //     ColRdSize=(rank+1)*ColRdExtent-ColRdDisp;
+    // }
     #if SHOW_PROGRESS
     if (rank==0){
          printf("Reading file and mapping steps\n");
         // printf("0%% -");
     }
     #endif
-    while((file_count < file_size - (num_ranks-1)*read_size) && read_size!=0){
-        #if SHOW_PROGRESS
-        // if (rank==0){
-        //     // printf("%d, %d\n\n",((int)file_size),((int)file_count));
-        //     if (file_count!=0){
-        //         for(int j=1;j<11;j++){
-        //             // if ((10*file_count/file_size >= j) && (file_count<10*j*(file_size/file_count)+read_size*(num_ranks-1))) printf(" %d%% -\n",10*j);
-        //             // printf("j=%d - %lld - %lld || ",j,10*file_count/file_size,10*(file_count-read_size*(num_ranks-1))/file_size);
-        //             if ((10*file_count/file_size >= j) && (10*(file_count-BLOCKSIZE*(num_ranks-1))/file_size < j)) printf(" %d%% - ",10*j);
-        //         }
-        //     }
-        // }
-        #endif
+    MPI_Status status;
+    while((ColRdDisp < (rank+1)*ColRdExtent) && ColRdSize!=0){
+        // printf("WHILE LOOP --- rank=%d, file size=%lld, ColRdExtent=%ld; ColRdDisp=%lld ColRdSize=%ld\n",rank,file_size,ColRdExtent,ColRdDisp,ColRdSize);
         /***input and scatter phase***/
-        if(rank == 0){
-            MPI_File_read(fh,buff+read_size,read_size*(num_ranks - 1),MPI_UNSIGNED_CHAR,MPI_STATUS_IGNORE);
-        }
-        MPI_Scatter(buff, read_size, MPI_UNSIGNED_CHAR, recver, read_size, MPI_CHAR, 0, MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_File_read_all(fh,recver,ColRdSize,MPI_CHAR,&status);
 
         /***mapping and shift phase***/
         block_count=0;
-        if (rank!=0)
-        {
-            while(block_count<read_size){
-                words[count_words].key_len=0;
-                Map(recver,read_size,block_count,words+count_words);
-                if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
-            }
+        while(block_count<ColRdSize){
+            // printf("count_words=%d\n",count_words);
+            words[count_words].key_len=0;
+            Map(recver,ColRdSize,block_count,words[count_words].key_len,words[count_words].key,words[count_words].val);
+            if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
         }
         //advance offset
-        file_count = file_count +  read_size*(num_ranks - 1);
-        if(rank==0){
-            MPI_File_seek(fh, file_count, MPI_SEEK_SET);
-            }
-        if (file_count >= file_size-(num_ranks-1)*read_size){
-            read_size=((file_size-file_count)/(num_ranks-1));
+        ColRdDisp += ColRdSize;
+        MPI_File_seek(fh,ColRdDisp,MPI_SEEK_SET);
+        if (ColRdDisp>(rank+1)*ColRdExtent-ColRdSize)
+        {
+            ColRdSize=(rank+1)*ColRdExtent-ColRdDisp;
         }
+        // printf("END WHILE LOOP --- rank=%d, file size=%lld, ColRdExtent=%ld; ColRdDisp=%lld ColRdSize=%ld\n",rank,file_size,ColRdExtent,ColRdDisp,ColRdSize);
     }   //--- End of while loop ---//
-    if (rank==0){   //Printf reading informations
-        #if SHOW_PROGRESS
-            // printf("100%%\n");
-        #endif
-         printf("File size is %lld bytes. ", file_size);
-         printf("Number of unread characters (at the end of the file): %lld\n",file_size-file_count);
+    // printf("Hello world, I'm rank %d and I'm out of the while loop!\n",rank);
+    if (rank==0){
+         printf("File size is %lld bytes.\n", file_size);
+         // printf("Number of unread characters (at the end of the file): %lld\n",file_size-file_count);
     }
 
-    delete [] buff, recver;
+    MPI_File_close(&fh);
+    delete [] recver;
 
 
     /***all to all comm. phase***/
@@ -231,7 +246,6 @@ int main(int argc, char** argv){
     #endif
     TotNbWords=0;
     LocNbWords=reduceNb;
-    //for(int i=0;i<num_ranks;i++) LocNbWords+=ataRecvCnt[i];   //Back when reduce was not implemented
     MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
     if (rank==0){
@@ -268,24 +282,20 @@ int main(int argc, char** argv){
         }
     #endif
 
-    // Moved some of the deletions up in the code to free the unused memory during the execution
-    // delete [] buff;
-    // delete [] recver;
-    // delete [] words;
     delete [] ataSendCnt;
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
-    // delete [] ataSend;
     delete [] rankRecord;
-    delete [] gatherRcv;
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
+    if (rank==0) delete [] gatherRcv;
 
     #if SHOW_PROGRESS
         if (rank==0) printf("Job done.\n");
     #endif
 
     MPI_Finalize();
+
     return 0;
 }
