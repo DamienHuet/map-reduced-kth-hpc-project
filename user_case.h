@@ -25,7 +25,7 @@ int calculateDestRank(char *word, int length, int num_ranks)
 }
 
 typedef struct KEYVAL{
-    int key_len = 0;
+    int key_len=0;
     int val;
     char key[WORD_LEN];
 } KEYVAL;
