@@ -1,20 +1,28 @@
 #include <stdio.h>
 #include <mpi.h>
 #include <stdlib.h>
+#include <time.h>
 #include <vector>
 #include "user_case.h"
 #include "toolbox.h"
 
-#define FILE_NAME "../test_files/wikipedia_test_small.txt"
-#define BLOCKSIZE 100
+//#define FILE_NAME "wikipedia_test_small.txt"
+#define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
+//#define BLOCKSIZE 1000
+#define BLOCKSIZE 67108864
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
 #define SORT_RESULT 1
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
+#define TIME_REPORT 1
 
 int main(int argc, char** argv){
+
+    clock_t  ReadMapStart, ReadMapStop,
+            ataStart    , ataStop    ,
+            reduceGatherStart , reduceGatherStop;
 
     MPI_Init(&argc, &argv);
 
@@ -75,7 +83,7 @@ int main(int argc, char** argv){
     /***Initial and boardcast phase***/
     // variable for collective reading
     char* recver;
-    MPI_File_open(MPI_COMM_WORLD, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_open(MPI_COMM_SELF, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
     MPI_File_get_size(fh, &file_size);
     MPI_Aint ColRdSize = BLOCKSIZE * sizeof(char);
     MPI_Aint ColRdExtent = num_ranks*ColRdSize;
@@ -96,6 +104,9 @@ int main(int argc, char** argv){
          printf("Reading file and mapping steps\n");
     }
     #endif
+    
+    ReadMapStart = clock();
+    
     int nbUsedProc;
     if (ColRdDisp-rank*ColRdSize>file_size-num_ranks*ColRdSize)
     {
@@ -142,8 +153,12 @@ int main(int argc, char** argv){
     MPI_File_close(&fh);
     delete [] recver;
 
+    ReadMapStop = clock();
 
     /***all to all comm. phase***/
+    
+    ataStart = clock();
+    
     #if SHOW_PROGRESS
         if (rank==0) printf("All to all communication step...\n");
     #endif
@@ -208,8 +223,13 @@ int main(int argc, char** argv){
         }
     #endif
     delete [] ataSend;
+    
+    ataStop = clock();
 
     // Call reduce on each process
+    
+    reduceGatherStart = clock();
+    
     #if SHOW_PROGRESS
         if (rank==0) printf("Reduce step...\n");
     #endif
@@ -251,6 +271,7 @@ int main(int argc, char** argv){
                     gatherRcv,gatherRecvCnt,gatherRecvDsp,
                     MPI_KEYVAL,0,MPI_COMM_WORLD);
 
+    delete [] reduceAry;
     #if SORT_RESULT
         #if SHOW_PROGRESS
             if (rank==0) printf("Result sorting step...\n");
@@ -261,6 +282,7 @@ int main(int argc, char** argv){
         }
     #endif
 
+    reduceGatherStop = clock();
 
     #if SHOW_RESULT
         for(int i=0;i<TotNbWords;i++){
@@ -276,6 +298,7 @@ int main(int argc, char** argv){
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
+    
     delete [] rankRecord;
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
@@ -283,6 +306,13 @@ int main(int argc, char** argv){
 
     #if SHOW_PROGRESS
         if (rank==0) printf("Job done.\n");
+    #endif
+    
+    #if TIME_REPORT
+
+        printf("rank %d: ReadMap %f \n", rank, (double)(ReadMapStop-ReadMapStart)/CLOCKS_PER_SEC);
+        printf("rank %d: ata %f \n", rank, (double)(ataStop - ataStart)/CLOCKS_PER_SEC);
+        printf("rank %d: reduceGather %f \n", rank, (double)(reduceGatherStop - reduceGatherStart)/CLOCKS_PER_SEC);
     #endif
 
     MPI_Finalize();
