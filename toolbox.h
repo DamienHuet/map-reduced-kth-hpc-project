@@ -55,7 +55,7 @@ void quickSort(KEYVAL* arr, int low, int high)
 
 int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, int* blockSize){
     char flagFileName[] = "--filename";
-    // char flagBlockSize[] = "--blocksize";
+    char flagBlockSize[] = "--blocksize";
     if (nbArgs%2!=1){
         printf("Not the right number of flags or arguments. All default values will be used.\n");
         return 1;
@@ -81,21 +81,22 @@ int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, int* blockSize){
             }
         }
         else match=1;
-        // j=0;
-        // while (match){
-        //     while(Args[i][j]!='\0'){
-        //         printf("j=%d, char=%c\n",j, Args[i][j]);
-        //         if (flagBlockSize[j]==Args[i][j]) j++;
-        //         else match=0;
-        //     }
-        // }
-        // if (match){
-        //     *blockSize=0;
-        //     int k=0;
-        //     while (Args[i+1][k]!='\0'){
-        //         *blockSize+=10*(*blockSize)+ ((int) Args[i+1][k]);
-        //     }
-        // }
+        j=0;
+        do {
+            while(match && Args[i][j]!='\0'){
+                // printf("j=%d, char=%c\n",j, Args[i][j]);
+                if (flagBlockSize[j]==Args[i][j]) j++;
+                else match=0;
+            }
+        } while (match && Args[i][j]!='\0');
+        if (match){
+            *blockSize=0;
+            int k=0;
+            while (Args[i+1][k]!='\0'){
+                *blockSize=10*(*blockSize)+ (Args[i+1][k]-48);
+                k++;
+            }
+        }
     }
     return 0;
 }
