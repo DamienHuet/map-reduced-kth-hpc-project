@@ -7,9 +7,9 @@
 #include "toolbox.h"
 
 //#define FILE_NAME "wikipedia_test_small.txt"
-#define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
-//#define BLOCKSIZE 1000
-#define BLOCKSIZE 67108864
+#define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define BLOCKSIZE 1000
+// #define BLOCKSIZE 67108864
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
@@ -32,7 +32,25 @@ int main(int argc, char** argv){
     MPI_Offset file_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
+    int blocksize=BLOCKSIZE;
     // MPI_Request ReadFileScatReq;
+
+    // get command line arguments
+    char* filename;
+    char filenamemacro[]="../test_files/wikipedia_test_small.txt";
+    int j=0; while(filenamemacro[j]!='\0') j++;
+    filename = new char[j];
+    for(int i=0;i<j+1;i++) filename[i]=filenamemacro[i];
+    // filename=FILE_NAME;
+    setCmdLineOptions(argc,argv,filename,&blocksize);
+    if (rank==0){
+        printf("Reading the file: ");
+        j=0; while(filename[j]!='\0') j++;
+        for (int i=0;i<j;i++) printf("%c",filename[i]);
+        printf("\n");
+        printf("Working with blocks of size %d\n",blocksize);
+        printf("\n");
+    }
 
     //variable for map and shift
     int block_count;
@@ -55,8 +73,8 @@ int main(int argc, char** argv){
     int* ataRecvDsp;
     ataRecvDsp = new int[num_ranks];
     for(int i=0;i < num_ranks;i++){
-        *(ataRecvDsp+i) = i*BLOCKSIZE/2;
-        *(ataRecvCnt+i) = BLOCKSIZE/2;
+        *(ataRecvDsp+i) = i*blocksize/2;
+        *(ataRecvCnt+i) = blocksize/2;
     }
 
     //defining datatype for all to all
@@ -83,19 +101,22 @@ int main(int argc, char** argv){
     /***Initial and boardcast phase***/
     // variable for collective reading
     char* recver;
-    MPI_File_open(MPI_COMM_SELF, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
     MPI_File_get_size(fh, &file_size);
-    MPI_Aint ColRdSize = BLOCKSIZE * sizeof(char);
+    MPI_Aint ColRdSize = blocksize * sizeof(char);
     MPI_Aint ColRdExtent = num_ranks*ColRdSize;
     MPI_Offset ColRdDisp = rank*ColRdSize;
     MPI_Datatype contig, filetype;
     MPI_Type_contiguous(ColRdSize,MPI_CHAR,&contig);
     MPI_Type_create_resized(contig,0,ColRdExtent,&filetype);
-    MPI_Type_commit(&contig);
+    // MPI_Type_commit(&contig);
     MPI_Type_commit(&filetype);
     recver=new char[ColRdSize];
     MPI_File_set_view(fh,ColRdDisp,MPI_CHAR,filetype,"native",MPI_INFO_NULL);
     words = new KEYVAL[file_size/(2*(num_ranks))];  //Worst case scenario is there are one new word every two characters
+    // for(int i=0;i<file_size/(2*num_ranks);i++){
+    //     words[i].key_len=0;     //initializing the lengths of the words to zero
+    // }
 
 
     count_words=0;
@@ -104,15 +125,16 @@ int main(int argc, char** argv){
          printf("Reading file and mapping steps\n");
     }
     #endif
-    
+
     ReadMapStart = clock();
-    
+
     int nbUsedProc;
     if (ColRdDisp-rank*ColRdSize>file_size-num_ranks*ColRdSize)
     {
         nbUsedProc=(file_size-ColRdDisp+rank*ColRdSize)/ColRdSize;
     }
     else nbUsedProc=num_ranks;
+
     while(nbUsedProc>0 && (ColRdDisp-rank*ColRdSize < file_size-file_size%(nbUsedProc*ColRdSize))){
         /***input and scatter phase***/
         if (nbUsedProc==num_ranks){
@@ -156,9 +178,9 @@ int main(int argc, char** argv){
     ReadMapStop = clock();
 
     /***all to all comm. phase***/
-    
+
     ataStart = clock();
-    
+
     #if SHOW_PROGRESS
         if (rank==0) printf("All to all communication step...\n");
     #endif
@@ -223,13 +245,13 @@ int main(int argc, char** argv){
         }
     #endif
     delete [] ataSend;
-    
+
     ataStop = clock();
 
     // Call reduce on each process
-    
+
     reduceGatherStart = clock();
-    
+
     #if SHOW_PROGRESS
         if (rank==0) printf("Reduce step...\n");
     #endif
@@ -298,7 +320,7 @@ int main(int argc, char** argv){
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
-    
+
     delete [] rankRecord;
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
@@ -307,9 +329,8 @@ int main(int argc, char** argv){
     #if SHOW_PROGRESS
         if (rank==0) printf("Job done.\n");
     #endif
-    
-    #if TIME_REPORT
 
+    #if TIME_REPORT
         printf("rank %d: ReadMap %f \n", rank, (double)(ReadMapStop-ReadMapStart)/CLOCKS_PER_SEC);
         printf("rank %d: ata %f \n", rank, (double)(ataStop - ataStart)/CLOCKS_PER_SEC);
         printf("rank %d: reduceGather %f \n", rank, (double)(reduceGatherStop - reduceGatherStart)/CLOCKS_PER_SEC);
