@@ -6,10 +6,11 @@
 #include "user_case.h"
 #include "toolbox.h"
 
-//#define FILE_NAME "wikipedia_test_small.txt"
-#define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
-#define BLOCKSIZE 67108864
-//#define BLOCKSIZE 10000
+#define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define BLOCKSIZE 1000
+#define WRITE_PATH "words_output.csv"
+// #define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
+// #define BLOCKSIZE 67108864
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
@@ -36,21 +37,26 @@ int main(int argc, char** argv){
     // MPI_Request ReadFileScatReq;
 
     // get command line arguments
-    // char* filename;
-    // char filenamemacro[]="../test_files/wikipedia_test_small.txt";
-    // int j=0; while(filenamemacro[j]!='\0') j++;
-    // filename = new char[200];
-    // for(int i=0;i<j+1;i++) filename[i]=filenamemacro[i];
-    // setCmdLineOptions(argc,argv,filename,&blocksize);
-    // if (rank==0){
-    //     printf("Reading the file: ");
-    //     j=0; while(filename[j]!='\0') j++;
-    //     for (int i=0;i<j;i++) printf("%c",filename[i]);
-    //     printf("\n");
-    //     printf("Working with blocks of size %ld\n",blocksize);
-    //     printf("\n");
-    // }
-    char filename[]=FILE_NAME;
+    char* filename;
+    char filenamemacro[]=FILE_NAME;
+    filename = new char[200];
+    int j=0; while(filenamemacro[j]!='\0') j++;
+    for(int i=0;i<j+1;i++) filename[i]=filenamemacro[i];
+    char* outputname;
+    char outputnamemacro[]=WRITE_PATH;
+    outputname = new char[200];
+    while(outputnamemacro[j]!='\0') j++;
+    for(int i=0;i<j+1;i++) outputname[i]=outputnamemacro[i];
+
+    setCmdLineOptions(argc,argv,filename,outputname,&blocksize);
+    if (rank==0){
+        printf("Reading the file: ");
+        j=0; while(filename[j]!='\0') j++;
+        for (int i=0;i<j;i++) printf("%c",filename[i]);
+        printf("\n");
+        printf("Working with blocks of size %ld\n",blocksize);
+        printf("\n");
+    }
 
     //variable for map and shift
     int block_count;
@@ -266,6 +272,8 @@ int main(int argc, char** argv){
     }
     delete [] atarecv;
 
+    if (rank==0) quickSort(reduceAry,0,reduceNb-1);
+
     #if SORT_RESULT
     // If we want to perform the sort in a parallel way (not implemented yet: to be implemented when the std::map will be available)
         // First, sort the lists on each process (sequentially here, but why not using OpenMP)
@@ -316,6 +324,25 @@ int main(int argc, char** argv){
         }
     #endif
 
+    #if SHOW_PROGRESS
+    printf("Write to file step...\n");
+    // If too long, this step can be parallelized with MPI I/O
+        if (rank==0){
+            // check if the file exists
+            if( remove( outputname ) != 0 ) perror( "Suppression of the previous output file." );
+            printf("Writing results to the file %s\n",outputname);
+            MPI_File fh_write;
+            MPI_File_open(MPI_COMM_SELF,outputname,(MPI_MODE_CREATE | MPI_MODE_WRONLY | MPI_MODE_APPEND),MPI_INFO_NULL,&fh_write);
+            char info[50];
+            int str_len;
+            for(int i=0;i<TotNbWords;i++){
+                str_len=sprintf(info,"%d; %s\n",gatherRcv[i].val,gatherRcv[i].key);
+                MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
+            }
+            MPI_File_close(&fh_write);
+        }
+    #endif
+
     delete [] ataSendCnt;
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
@@ -325,6 +352,8 @@ int main(int argc, char** argv){
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
     if (rank==0) delete [] gatherRcv;
+
+
 
     #if SHOW_PROGRESS
         if (rank==0) printf("Job done.\n");
