@@ -13,7 +13,7 @@
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
-#define SORT_RESULT 0
+#define SORT_RESULT 1
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
 #define TIME_REPORT 1

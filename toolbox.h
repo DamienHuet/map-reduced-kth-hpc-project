@@ -4,11 +4,25 @@
 // In-place serial quick sort
 // A utility function to swap two elements
 void swap(KEYVAL* a, KEYVAL* b)
-{
-    KEYVAL t = *a;
-    *a = *b;
-    *b = t;
+    {
+        KEYVAL t;
+
+        // Copy a in t
+        t.val=a->val;
+        t.key_len=a->key_len;
+        for(int i=0;i<a->key_len+1;i++) t.key[i]=a->key[i];    //a.key_len+1 because we want to copy the '\0' char at the end, and I'm not sure it is included in the number of letters
+
+        // Copy b in a
+        a->val=b->val;
+        a->key_len=b->key_len;
+        for(int i=0;i<b->key_len+1;i++) a->key[i]=b->key[i];
+
+        // Copy t in b
+        b->val=t.val;
+        b->key_len=t.key_len;
+        for(int i=0;i<t.key_len+1;i++) b->key[i]=t.key[i];
 }
+
 /* This function takes last element as pivot, places
    the pivot element at its correct position in sorted
     array, and places all smaller (smaller than pivot)
