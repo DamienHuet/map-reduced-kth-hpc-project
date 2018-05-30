@@ -7,12 +7,13 @@
 #include "toolbox.h"
 
 //#define FILE_NAME "wikipedia_test_small.txt"
-#define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
 #define BLOCKSIZE 67108864
+//#define BLOCKSIZE 10000
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
-#define SORT_RESULT 1
+#define SORT_RESULT 0
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
 #define TIME_REPORT 1
