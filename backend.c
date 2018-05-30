@@ -8,8 +8,7 @@
 
 //#define FILE_NAME "wikipedia_test_small.txt"
 #define FILE_NAME "../test_files/wikipedia_test_small.txt"
-#define BLOCKSIZE 1000
-// #define BLOCKSIZE 67108864
+#define BLOCKSIZE 67108864
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
@@ -32,25 +31,25 @@ int main(int argc, char** argv){
     MPI_Offset file_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
-    int blocksize=BLOCKSIZE;
+    long int blocksize=BLOCKSIZE;
     // MPI_Request ReadFileScatReq;
 
     // get command line arguments
-    char* filename;
-    char filenamemacro[]="../test_files/wikipedia_test_small.txt";
-    int j=0; while(filenamemacro[j]!='\0') j++;
-    filename = new char[j];
-    for(int i=0;i<j+1;i++) filename[i]=filenamemacro[i];
-    // filename=FILE_NAME;
-    setCmdLineOptions(argc,argv,filename,&blocksize);
-    if (rank==0){
-        printf("Reading the file: ");
-        j=0; while(filename[j]!='\0') j++;
-        for (int i=0;i<j;i++) printf("%c",filename[i]);
-        printf("\n");
-        printf("Working with blocks of size %d\n",blocksize);
-        printf("\n");
-    }
+    // char* filename;
+    // char filenamemacro[]="../test_files/wikipedia_test_small.txt";
+    // int j=0; while(filenamemacro[j]!='\0') j++;
+    // filename = new char[200];
+    // for(int i=0;i<j+1;i++) filename[i]=filenamemacro[i];
+    // setCmdLineOptions(argc,argv,filename,&blocksize);
+    // if (rank==0){
+    //     printf("Reading the file: ");
+    //     j=0; while(filename[j]!='\0') j++;
+    //     for (int i=0;i<j;i++) printf("%c",filename[i]);
+    //     printf("\n");
+    //     printf("Working with blocks of size %ld\n",blocksize);
+    //     printf("\n");
+    // }
+    char filename[]=FILE_NAME;
 
     //variable for map and shift
     int block_count;
@@ -101,7 +100,7 @@ int main(int argc, char** argv){
     /***Initial and boardcast phase***/
     // variable for collective reading
     char* recver;
-    MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_open(MPI_COMM_WORLD, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
     MPI_File_get_size(fh, &file_size);
     MPI_Aint ColRdSize = blocksize * sizeof(char);
     MPI_Aint ColRdExtent = num_ranks*ColRdSize;
@@ -143,7 +142,7 @@ int main(int argc, char** argv){
         else{
             if (rank<nbUsedProc){
                 MPI_File_read(fh,recver,ColRdSize,MPI_CHAR,MPI_STATUS_IGNORE);
-                printf("rank %d successfully read some stuff!\n",rank);
+                // printf("rank %d successfully read some stuff!\n",rank);
             }
         }
         // Useful for the reading debugging
