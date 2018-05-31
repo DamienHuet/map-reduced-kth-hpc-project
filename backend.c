@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <vector>
+#include <omp.h>
 #include "user_case.h"
 #include "toolbox.h"
 
@@ -16,7 +17,7 @@
 
 #define SORT_RESULT 0
 #define SHOW_PROGRESS 1
-#define SHOW_RESULT 0
+#define SHOW_RESULT 1
 #define TIME_REPORT 0
 
 int main(int argc, char** argv){
@@ -59,8 +60,8 @@ int main(int argc, char** argv){
     }
 
     //variable for map and shift
-    int block_count;
     int count_words=0;
+    int lopEnd[2];
     KEYVAL* words;
     std::vector<KEYVAL> wordStore;
     wordStore.clear();
@@ -160,11 +161,27 @@ int main(int argc, char** argv){
             // printf("\n");
         /***mapping and shift phase***/
         if (rank<nbUsedProc){
-            block_count=0;
-            while(block_count<ColRdSize){
-                //words[count_words].key_len=0;
-                Map(recver,ColRdSize,block_count,wordStore);
-                //if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
+            lopEnd[1] = ColRdSize;
+            lopEnd[0] = ColRdSize/2;
+            while(isDigit(*(recver+lopEnd[0])) || isLetter(*(recver+lopEnd[0]))) lopEnd[0]++;
+            #pragma omp parallel num_threads(2)
+            {
+                int thd = omp_get_thread_num();
+                int block_count=0;
+                int readend = lopEnd[0];
+                KEYVAL word;
+                if(thd == 1){
+                    block_count = lopEnd[0];
+                    readend = lopEnd[1];
+                }
+                while(block_count<lopEnd[thd]){
+                    //words[count_words].key_len=0;
+                    Map(recver,readend,block_count,word);
+                    #pragma omp critical
+                    {
+                        if(word.key_len != 0) wordStore.push_back(word);     //if we have mapped a word, increment count_words
+                    }
+                }
             }
         }
         // No need to advance the offset with MPI_File_read_all
@@ -328,7 +345,7 @@ int main(int argc, char** argv){
         }
     #endif
 
-    #if 0
+    #if 1
     printf("Write to file step...\n");
     // If too long, this step can be parallelized with MPI I/O
         if (rank==0){

@@ -48,9 +48,8 @@ bool isDigit(char x)
   return(isdigit);
 }
 
-void Map(char* task, int task_len, int &task_count, std::vector<KEYVAL> &vec)
+void Map(char* task, int task_len, int &task_count, KEYVAL &word)
 {
-    KEYVAL word;
     word.key_len=0;
     word.val=0;
     int i=task_count;
@@ -72,7 +71,6 @@ void Map(char* task, int task_len, int &task_count, std::vector<KEYVAL> &vec)
     task_count+=word.key_len;
     task_count+=1;
     word.val=1;
-    if(word.val == 1) vec.push_back(word);
 }
 
 void Reduce(std::vector<KEYVAL> &vec, KEYVAL* ary, int cnt)
