@@ -6,7 +6,7 @@
 #include "user_case.h"
 #include "toolbox.h"
 
-#define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define FILE_NAME "wikipedia_test_small.txt"
 #define BLOCKSIZE 1000
 #define WRITE_PATH "words_output.csv"
 // #define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
@@ -14,10 +14,10 @@
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
-#define SORT_RESULT 1
+#define SORT_RESULT 0
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
-#define TIME_REPORT 1
+#define TIME_REPORT 0
 
 int main(int argc, char** argv){
 
@@ -62,6 +62,8 @@ int main(int argc, char** argv){
     int block_count;
     int count_words=0;
     KEYVAL* words;
+    std::vector<KEYVAL> wordStore;
+    wordStore.clear();
 
     //variable for all to all
     int cntCnt;
@@ -107,7 +109,7 @@ int main(int argc, char** argv){
     /***Initial and boardcast phase***/
     // variable for collective reading
     char* recver;
-    MPI_File_open(MPI_COMM_WORLD, FILE_NAME, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
     MPI_File_get_size(fh, &file_size);
     MPI_Aint ColRdSize = blocksize * sizeof(char);
     MPI_Aint ColRdExtent = num_ranks*ColRdSize;
@@ -119,7 +121,7 @@ int main(int argc, char** argv){
     MPI_Type_commit(&filetype);
     recver=new char[ColRdSize];
     MPI_File_set_view(fh,ColRdDisp,MPI_CHAR,filetype,"native",MPI_INFO_NULL);
-    words = new KEYVAL[file_size/(2*(num_ranks))];  //Worst case scenario is there are one new word every two characters
+    //Worst case scenario is there are one new word every two characters
     // for(int i=0;i<file_size/(2*num_ranks);i++){
     //     words[i].key_len=0;     //initializing the lengths of the words to zero
     // }
@@ -160,9 +162,9 @@ int main(int argc, char** argv){
         if (rank<nbUsedProc){
             block_count=0;
             while(block_count<ColRdSize){
-                words[count_words].key_len=0;
-                Map(recver,ColRdSize,block_count,words[count_words].key_len,words[count_words].key,words[count_words].val);
-                if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
+                //words[count_words].key_len=0;
+                Map(recver,ColRdSize,block_count,wordStore);
+                //if(words[count_words].key_len!=0) count_words++;     //if we have mapped a word, increment count_words
             }
         }
         // No need to advance the offset with MPI_File_read_all
@@ -180,6 +182,10 @@ int main(int argc, char** argv){
 
     MPI_File_close(&fh);
     delete [] recver;
+    delete [] filename;
+    
+    count_words = wordStore.size();
+    words = wordStore.data();
 
     ReadMapStop = clock();
 
@@ -210,8 +216,6 @@ int main(int argc, char** argv){
         }
         ataSendCnt[i] = cntCnt;
     }
-
-    delete [] words;
 
     MPI_Alltoall(ataSendCnt,1,MPI_INT,ataRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
@@ -324,7 +328,7 @@ int main(int argc, char** argv){
         }
     #endif
 
-    #if SHOW_PROGRESS
+    #if 0
     printf("Write to file step...\n");
     // If too long, this step can be parallelized with MPI I/O
         if (rank==0){
@@ -342,21 +346,21 @@ int main(int argc, char** argv){
             MPI_File_close(&fh_write);
         }
     #endif
-
+    
+    delete [] outputname;
     delete [] ataSendCnt;
     delete [] ataRecvCnt;
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
-
     delete [] rankRecord;
     delete [] gatherRecvCnt;
     delete [] gatherRecvDsp;
     if (rank==0) delete [] gatherRcv;
 
 
-
     #if SHOW_PROGRESS
-        if (rank==0) printf("Job done.\n");
+        if (rank==0) 
+            printf("rank %d Job done.\n", rank);
     #endif
 
     #if TIME_REPORT
