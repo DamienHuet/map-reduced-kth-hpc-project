@@ -17,8 +17,9 @@
 
 #define SORT_RESULT 0
 #define SHOW_PROGRESS 1
-#define SHOW_RESULT 1
-#define TIME_REPORT 0
+#define SHOW_RESULT 0
+#define TIME_REPORT 1
+#define TIME_REPORT_DETAIL 0
 
 int main(int argc, char** argv){
 
@@ -110,7 +111,7 @@ int main(int argc, char** argv){
     /***Initial and boardcast phase***/
     // variable for collective reading
     char* recver;
-    MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
+    MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
     MPI_File_get_size(fh, &file_size);
     MPI_Aint ColRdSize = blocksize * sizeof(char);
     MPI_Aint ColRdExtent = num_ranks*ColRdSize;
@@ -203,6 +204,7 @@ int main(int argc, char** argv){
     
     count_words = wordStore.size();
     words = wordStore.data();
+    wordStore.clear();
 
     ReadMapStop = clock();
 
@@ -211,7 +213,7 @@ int main(int argc, char** argv){
     ataStart = clock();
 
     #if SHOW_PROGRESS
-        if (rank==0) printf("All to all communication step...\n");
+        if (rank==0) printf("All to all communication steps\n");
     #endif
     ataSend = new KEYVAL[count_words];
     rankRecord = new int[count_words];
@@ -233,6 +235,7 @@ int main(int argc, char** argv){
         }
         ataSendCnt[i] = cntCnt;
     }
+    delete [] rankRecord;
 
     MPI_Alltoall(ataSendCnt,1,MPI_INT,ataRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
 
@@ -272,6 +275,10 @@ int main(int argc, char** argv){
         }
     #endif
     delete [] ataSend;
+    delete [] ataSendCnt;
+    delete [] ataRecvCnt;
+    delete [] ataSendDsp;
+    delete [] ataRecvDsp;
 
     ataStop = clock();
 
@@ -280,18 +287,19 @@ int main(int argc, char** argv){
     reduceGatherStart = clock();
 
     #if SHOW_PROGRESS
-        if (rank==0) printf("Reduce step...\n");
+        if (rank==0) printf("Reduce steps\n");
     #endif
     std::vector<KEYVAL> reduceVec;
     reduceVec.clear();
     Reduce(reduceVec, atarecv, cntRcv);
+    delete [] atarecv;
     int reduceNb = reduceVec.size();
     KEYVAL* reduceAry = new KEYVAL[reduceNb];
     for(int i=0;i< reduceNb;i++){
         *(reduceAry+i) = reduceVec.back();
         reduceVec.pop_back();
     }
-    delete [] atarecv;
+    reduceVec.clear();
 
     if (rank==0) quickSort(reduceAry,0,reduceNb-1);
 
@@ -303,7 +311,7 @@ int main(int argc, char** argv){
 
     // Gather the reduced result on master
     #if SHOW_PROGRESS
-        if (rank==0) printf("Gather to master thread step...\n");
+        if (rank==0) printf("Gather to master thread steps\n");
     #endif
     TotNbWords=0;
     LocNbWords=reduceNb;
@@ -314,7 +322,7 @@ int main(int argc, char** argv){
             gatherRecvDsp[i]=TotNbWords;
             TotNbWords+=gatherRecvCnt[i];
         }
-        printf("There are %d different words.\n",TotNbWords);
+        printf("%d words counted in total\n",TotNbWords);
         gatherRcv = new KEYVAL[TotNbWords];
     }
     MPI_Gatherv(reduceAry,LocNbWords,
@@ -323,9 +331,11 @@ int main(int argc, char** argv){
                     MPI_KEYVAL,0,MPI_COMM_WORLD);
 
     delete [] reduceAry;
+    delete [] gatherRecvDsp;
+    delete [] gatherRecvCnt;
     #if SORT_RESULT
         #if SHOW_PROGRESS
-            if (rank==0) printf("Result sorting step...\n");
+            if (rank==0) printf("Result sorting steps\n");
         #endif
         // If we do serial sort instead of parallel sort...
         if (rank==0){
@@ -344,46 +354,24 @@ int main(int argc, char** argv){
             printf(",%d>\n",gatherRcv[i].val);
         }
     #endif
-
-    #if 1
-    printf("Write to file step...\n");
-    // If too long, this step can be parallelized with MPI I/O
-        if (rank==0){
-            // check if the file exists
-            if( remove( outputname ) != 0 ) perror( "Suppression of the previous output file." );
-            printf("Writing results to the file %s\n",outputname);
-            MPI_File fh_write;
-            MPI_File_open(MPI_COMM_SELF,outputname,(MPI_MODE_CREATE | MPI_MODE_WRONLY | MPI_MODE_APPEND),MPI_INFO_NULL,&fh_write);
-            char info[50];
-            int str_len;
-            for(int i=0;i<TotNbWords;i++){
-                str_len=sprintf(info,"%d; %s\n",gatherRcv[i].val,gatherRcv[i].key);
-                MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
-            }
-            MPI_File_close(&fh_write);
-        }
-    #endif
     
     delete [] outputname;
-    delete [] ataSendCnt;
-    delete [] ataRecvCnt;
-    delete [] ataSendDsp;
-    delete [] ataRecvDsp;
-    delete [] rankRecord;
-    delete [] gatherRecvCnt;
-    delete [] gatherRecvDsp;
     if (rank==0) delete [] gatherRcv;
 
 
     #if SHOW_PROGRESS
         if (rank==0) 
-            printf("rank %d Job done.\n", rank);
+            printf("Job done.\n", rank);
     #endif
 
     #if TIME_REPORT
-        printf("rank %d: ReadMap %f \n", rank, (double)(ReadMapStop-ReadMapStart)/CLOCKS_PER_SEC);
-        printf("rank %d: ata %f \n", rank, (double)(ataStop - ataStart)/CLOCKS_PER_SEC);
-        printf("rank %d: reduceGather %f \n", rank, (double)(reduceGatherStop - reduceGatherStart)/CLOCKS_PER_SEC);
+        if(rank==0)
+        printf("rank %d: Total: %f \n", rank, (double)(reduceGatherStop-ReadMapStart)/CLOCKS_PER_SEC);
+        #if TIME_REPORT_DETAIL
+            printf("rank %d: ReadMap %f \n", rank, (double)(ReadMapStop-ReadMapStart)/CLOCKS_PER_SEC);
+            printf("rank %d: ata %f \n", rank, (double)(ataStop - ataStart)/CLOCKS_PER_SEC);
+            printf("rank %d: reduceGather %f \n", rank, (double)(reduceGatherStop - reduceGatherStart)/CLOCKS_PER_SEC);
+        #endif
     #endif
 
     MPI_Finalize();
