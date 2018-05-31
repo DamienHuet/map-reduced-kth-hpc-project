@@ -1,3 +1,5 @@
+#include "user_case.h"
+
 #ifndef TOOLBOX
 #define TOOLBOX
 
@@ -140,7 +142,63 @@ int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, char* &outputNam
 }
 
 
+// Merges two sorted arrays in one array (this is NOT an inplace operation, so there are 3 arrays processed)
+void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merged_ary){
+    int count_1=0;
+    int count_2=0;
+    int count_merged=0;
+    // printf("Hello1\n");
+    while((len_ary1-count_1!=0) && (len_ary2-count_2!=0)){
+        // printf("Hello2, count_1=%d, count_2=%d, ary1[count_1].val=%d, ary1[count_1].key_len=%d, ary2[count_2].val=%d, ary2[count_2].key_len=%d \n",count_1, count_2,ary1[count_1].val, ary1[count_1].key_len, ary2[count_2].val,ary2[count_2].key_len);
+        if (ary1[count_1].val > ary2[count_2].val){
+            // printf("Hello3\n");
+            merged_ary[count_merged].val= ary1[count_1].val;
+            merged_ary[count_merged].key_len=ary1[count_1].key_len;
+            for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
+            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+            count_1++;
+            count_merged++;
+            // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d\n",count_1,len_ary1,count_2,len_ary2);
+        }
+        else{
+            // printf("Hello3.5\n");
+            merged_ary[count_merged].val= ary2[count_2].val;
+            merged_ary[count_merged].key_len=ary2[count_2].key_len;
+            for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
+            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+            count_2++;
+            count_merged++;
+            // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d\n",count_1,len_ary1,count_2,len_ary2);
+        }
+    }
 
+    // printf("Hello4\n");
+
+    while (len_ary1-count_1!=0){
+        // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d, count_merged=%d, len_merged_ary=%d\n",count_1,len_ary1,count_2,len_ary2,count_merged,len_merged_ary);
+        merged_ary[count_merged].val= ary1[count_1].val;
+        merged_ary[count_merged].key_len=ary1[count_1].key_len;
+        // printf("ary1[%d].key_len=%d\n",count_1,ary1[count_1].key_len);
+        for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
+        if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+        else merged_ary[count_merged].key[WORD_LEN-1]='\0';
+        count_1++;
+        count_merged++;
+        // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d\n",count_1,len_ary1,count_2,len_ary2);
+    }
+    while (len_ary2-count_2!=0){
+        // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d, count_merged=%d, len_merged_ary=%d\n",count_1,len_ary1,count_2,len_ary2,count_merged,len_merged_ary);
+        merged_ary[count_merged].val= ary2[count_2].val;
+        merged_ary[count_merged].key_len=ary2[count_2].key_len;
+        // printf("ary2[%d].key_len=%d\n",count_2,ary2[count_2].key_len);
+        for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
+        if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+        else merged_ary[count_merged].key[WORD_LEN-1]='\0';
+        count_2++;
+        count_merged++;
+        // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d\n",count_1,len_ary1,count_2,len_ary2);
+    }
+}
 
 
 #endif
