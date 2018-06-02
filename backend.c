@@ -331,6 +331,10 @@ int main(int argc, char** argv){
         //          than this power of 2, and exit the sort step. This way, exactly 2^N perform the
         //          actual merge step.  ------ //
 
+        #if SHOW_PROGRESS
+            if (rank==0) printf("Sort and merge steps...\n");
+        #endif
+
         // First, sort the lists on each process
         quickSort(reduceAry,0,reduceNb-1);
         int rcvLength=0;
