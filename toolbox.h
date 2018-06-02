@@ -1,3 +1,5 @@
+#include "user_case.h"
+
 #ifndef TOOLBOX
 #define TOOLBOX
 
@@ -23,11 +25,6 @@ void swap(KEYVAL* a, KEYVAL* b)
         for(int i=0;i<t.key_len+1;i++) b->key[i]=t.key[i];
 }
 
-/* This function takes last element as pivot, places
-   the pivot element at its correct position in sorted
-    array, and places all smaller (smaller than pivot)
-   to left of pivot and all greater elements to right
-   of pivot */
 int partition (KEYVAL* arr, int low, int high)
 {
     int pivot = arr[high].val;    // pivot
@@ -37,20 +34,16 @@ int partition (KEYVAL* arr, int low, int high)
     {
         // If current element is smaller than or
         // equal to pivot
-        if (arr[j].val > pivot)
+        if (arr[j].val >= pivot)
         {
             i++;    // increment index of smaller element
-            swap(arr+i, arr+j);
+            swap(&(arr[i]), &(arr[j]));
         }
     }
-    swap(arr+(i + 1), arr+high);
+    swap(&(arr[i + 1]), &(arr[high]));
     return (i + 1);
 }
 
-/* The main function that implements QuickSort
- arr[] --> Array to be sorted,
-  low  --> Starting index,
-  high  --> Ending index */
 void quickSort(KEYVAL* arr, int low, int high)
 {
     // printf("low=%d, high=%d\n",low,high);
@@ -66,6 +59,54 @@ void quickSort(KEYVAL* arr, int low, int high)
         quickSort(arr, pi + 1, high);
     }
 }
+
+
+// Merges two sorted arrays in one array (this is NOT an inplace operation, so there are 3 arrays processed)
+void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merged_ary){
+    int count_1=0;
+    int count_2=0;
+    int count_merged=0;
+    while((len_ary1-count_1!=0) && (len_ary2-count_2!=0)){
+        if (ary1[count_1].val > ary2[count_2].val){
+            merged_ary[count_merged].val= ary1[count_1].val;
+            merged_ary[count_merged].key_len=ary1[count_1].key_len;
+            for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
+            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+            count_1++;
+            count_merged++;
+        }
+        else{
+            merged_ary[count_merged].val= ary2[count_2].val;
+            merged_ary[count_merged].key_len=ary2[count_2].key_len;
+            for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
+            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+            count_2++;
+            count_merged++;
+        }
+    }
+    while (len_ary1-count_1!=0){
+        merged_ary[count_merged].val= ary1[count_1].val;
+        merged_ary[count_merged].key_len=ary1[count_1].key_len;
+        for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
+        if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+        else merged_ary[count_merged].key[WORD_LEN-1]='\0';
+        count_1++;
+        count_merged++;
+    }
+    while (len_ary2-count_2!=0){
+        merged_ary[count_merged].val= ary2[count_2].val;
+        merged_ary[count_merged].key_len=ary2[count_2].key_len;
+        for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
+        if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
+        else merged_ary[count_merged].key[WORD_LEN-1]='\0';
+        count_2++;
+        count_merged++;
+    }
+}
+
+
+
+
 
 
 int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, char* &outputName, long int* blockSize){
@@ -111,7 +152,7 @@ int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, char* &outputNam
             int j=0;
             while(Args[i+1][j]!='\0') j++;
             if (j>200){
-                printf("Path to file too long (200 char maximum)\n");
+                printf("Path to output file too long (200 char maximum)\n");
                 return 1;
             }
             for(int k=0;k<j+1;k++){
@@ -138,8 +179,6 @@ int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, char* &outputNam
     }
     return 0;
 }
-
-
 
 
 

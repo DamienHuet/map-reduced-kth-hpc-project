@@ -4,6 +4,7 @@
 #include <time.h>
 #include <vector>
 #include <omp.h>
+#include <math.h>
 #include "user_case.h"
 #include "toolbox.h"
 
@@ -15,17 +16,23 @@
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
-#define SORT_RESULT 0
+#define SORT_RESULT 1
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
 #define TIME_REPORT 1
+#define WRITE_TO_FILE 1
 #define TIME_REPORT_DETAIL 0
 
 int main(int argc, char** argv){
 
-    clock_t  ReadMapStart, ReadMapStop,
-            ataStart    , ataStop    ,
-            reduceGatherStart , reduceGatherStop;
+    #if TIME_REPORT
+            clock_t  ReadMapStart, reduceGatherStop;
+    #endif
+    #if TIME_REPORT_DETAIL
+            clock_t ReadMapStop,
+                ataStart    , ataStop ,
+                reduceGatherStart;
+    #endif
 
     MPI_Init(&argc, &argv);
 
@@ -99,14 +106,16 @@ int main(int argc, char** argv){
     MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
 
-    // variables for gather (combine phase)
-    int TotNbWords;
-    int LocNbWords;
-    KEYVAL* gatherRcv;
-    int* gatherRecvCnt;
-    gatherRecvCnt = new int[num_ranks];
-    int* gatherRecvDsp;
-    gatherRecvDsp = new int[num_ranks];
+    #if (SORT_RESULT==0)
+        // variables for gather (combine phase)
+        int TotNbWords;
+        int LocNbWords;
+        KEYVAL* gatherRcv;
+        int* gatherRecvCnt;
+        gatherRecvCnt = new int[num_ranks];
+        int* gatherRecvDsp;
+        gatherRecvDsp = new int[num_ranks];
+#endif
 
     /***Initial and boardcast phase***/
     // variable for collective reading
@@ -136,7 +145,10 @@ int main(int argc, char** argv){
     }
     #endif
 
-    ReadMapStart = clock();
+    #if TIME_REPORT
+            ReadMapStart = clock();
+    #endif
+
 
     int nbUsedProc;
     if (ColRdDisp-rank*ColRdSize>file_size-num_ranks*ColRdSize)
@@ -201,16 +213,20 @@ int main(int argc, char** argv){
     MPI_File_close(&fh);
     delete [] recver;
     delete [] filename;
-    
+
     count_words = wordStore.size();
     words = wordStore.data();
     wordStore.clear();
 
-    ReadMapStop = clock();
+    #if TIME_REPORT_DETAIL
+        ReadMapStop = clock();
+    #endif
 
     /***all to all comm. phase***/
 
-    ataStart = clock();
+    #if TIME_REPORT_DETAIL
+        ataStart = clock();
+    #endif
 
     #if SHOW_PROGRESS
         if (rank==0) printf("All to all communication steps\n");
@@ -280,11 +296,15 @@ int main(int argc, char** argv){
     delete [] ataSendDsp;
     delete [] ataRecvDsp;
 
-    ataStop = clock();
+    #if TIME_REPORT_DETAIL
+        ataStop = clock();
+    #endif
 
     // Call reduce on each process
 
-    reduceGatherStart = clock();
+    #if TIME_REPORT_DETAIL
+        reduceGatherStart = clock();
+    #endif
 
     #if SHOW_PROGRESS
         if (rank==0) printf("Reduce steps\n");
@@ -301,67 +321,248 @@ int main(int argc, char** argv){
     }
     reduceVec.clear();
 
-    if (rank==0) quickSort(reduceAry,0,reduceNb-1);
-
     #if SORT_RESULT
-    // If we want to perform the sort in a parallel way (not implemented yet: to be implemented when the std::map will be available)
-        // First, sort the lists on each process (sequentially here, but why not using OpenMP)
-        // quickSort(reduceAry,0,reduceNb-1);
-    #endif
+        //  ------ This is a parallel merge sort. Each process first locally sort its own array using a
+        //          quickSort, then it sends its data to a process or lower rank that will perform a
+        //          merge of the received array and its own array, until there is eventually only process
+        //          0 performing the last merge.
+        //          If the number of processes is not of the form 2^N, all processes of ranks higher than
+        //          the highest power of 2 < num_ranks will send their data to processes of rank lower
+        //          than this power of 2, and exit the sort step. This way, exactly 2^N perform the
+        //          actual merge step.  ------ //
 
-    // Gather the reduced result on master
-    #if SHOW_PROGRESS
-        if (rank==0) printf("Gather to master thread steps\n");
-    #endif
-    TotNbWords=0;
-    LocNbWords=reduceNb;
-    MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
-
-    if (rank==0){
-        for(int i=0;i<num_ranks;i++){
-            gatherRecvDsp[i]=TotNbWords;
-            TotNbWords+=gatherRecvCnt[i];
+        // First, sort the lists on each process
+        quickSort(reduceAry,0,reduceNb-1);
+        int rcvLength=0;
+        int ownLength;
+        bool own_array=1;
+        int send_to=0;
+        int recv_from=0;
+        KEYVAL* rcvArray;
+        KEYVAL* Array0;
+        KEYVAL* Array1;
+        ownLength=reduceNb;
+        Array0 = new KEYVAL[1]; //just to be able to delete it in the coming while loop
+        Array1 = new KEYVAL[ownLength];
+        for(int i=0;i<ownLength;i++){
+            Array1[i].key_len=reduceAry[i].key_len;
+            Array1[i].val=reduceAry[i].val;
+            for(int j=0;j<reduceAry[i].key_len;j++) Array1[i].key[j]=reduceAry[i].key[j];
         }
-        printf("%d words counted in total\n",TotNbWords);
-        gatherRcv = new KEYVAL[TotNbWords];
-    }
-    MPI_Gatherv(reduceAry,LocNbWords,
-                    MPI_KEYVAL,
-                    gatherRcv,gatherRecvCnt,gatherRecvDsp,
-                    MPI_KEYVAL,0,MPI_COMM_WORLD);
+        delete [] reduceAry;
+        int N,k;
+        N=(int) log2(num_ranks);
+        k=1;
 
-    delete [] reduceAry;
-    delete [] gatherRecvDsp;
-    delete [] gatherRecvCnt;
-    #if SORT_RESULT
-        #if SHOW_PROGRESS
-            if (rank==0) printf("Result sorting steps\n");
-        #endif
-        // If we do serial sort instead of parallel sort...
-        if (rank==0){
-            quickSort(gatherRcv,0,TotNbWords-1);
-        }
-    #endif
-
-    reduceGatherStop = clock();
-
-    #if SHOW_RESULT
-        for(int i=0;i<TotNbWords;i++){
-            printf("<");
-            for(int j=0;j<gatherRcv[i].key_len;j++){
-                printf("%c",gatherRcv[i].key[j]);
+        // If there are some processes of rank >= 2^N, they send their data to processes of rank < 2^N
+        if (rank>=(int)pow(2,N)){
+            // printf("Sending before the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            // send_to=rank%(num_ranks-(int)pow(2,N));
+            send_to=rank%(int)pow(2,N);
+            MPI_Send(&ownLength,1,MPI_INT,send_to,rank,MPI_COMM_WORLD);
+            // printf("rank=%d, ownLength sent to %d is %d\n",rank,send_to,ownLength);
+            if (own_array==1){
+                MPI_Send(Array1,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
+                delete [] Array1;
             }
-            printf(",%d>\n",gatherRcv[i].val);
+            else{
+                MPI_Send(Array0,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
+                delete [] Array0;
+            }
+        }
+        // Receive from ranks higher than 2^N
+        if (rank<num_ranks%(int)pow(2,N)  &&  rank<(int)pow(2,N)){
+            recv_from=(int)pow(2,N)+rank;
+            // printf("Receiving before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            MPI_Recv(&rcvLength,1,MPI_INT,recv_from,recv_from,
+                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            // printf("rank=%d, rcvLength form %d is %d\n",rank,recv_from,rcvLength);
+            rcvArray = new KEYVAL[rcvLength];
+            if (own_array==1){
+                delete [] Array0;
+                Array0 = new KEYVAL[ownLength+rcvLength];
+            }
+            else{
+                delete [] Array1;
+                Array1 = new KEYVAL[ownLength+rcvLength];
+            }
+            MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,recv_from,recv_from,
+                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            if (own_array==1){
+                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
+                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                ownLength=ownLength+rcvLength;
+                delete [] rcvArray;
+                own_array=0;
+            }
+            else{
+                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
+                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                ownLength=ownLength+rcvLength;
+                delete [] rcvArray;
+                own_array=1;
+            }
+        }
+        // printf("Before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+
+        //  Here the actual merge step begins, with exactly 2^N processes involved
+        while ((rank%((int)pow(2,k))==0) && (k<=N) && rank<(int)pow(2,N) ){
+            // printf("rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            MPI_Recv(&rcvLength,1,MPI_INT,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
+                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            // printf("rank=%d, rcvLength form %d is %d\n",rank,rank+((int)pow(2,k-1)),rcvLength);
+            rcvArray = new KEYVAL[rcvLength];
+            if (own_array==1){
+                delete [] Array0;
+                Array0 = new KEYVAL[ownLength+rcvLength];
+            }
+            else{
+                delete [] Array1;
+                Array1 = new KEYVAL[ownLength+rcvLength];
+            }
+            MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
+                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            if (own_array==1){
+                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
+                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                ownLength=ownLength+rcvLength;
+                delete [] rcvArray;
+                own_array=0;
+            }
+            else{
+                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
+                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                ownLength=ownLength+rcvLength;
+                delete [] rcvArray;
+                own_array=1;
+            }
+            k++;
+        }
+        if (rank!=0 && rank<(int)pow(2,N)){
+            // printf("Out of the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            MPI_Send(&ownLength,1,MPI_INT,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
+            // printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
+            if (own_array==1){
+                MPI_Send(Array1,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
+                delete [] Array1;
+            }
+            else{
+                MPI_Send(Array0,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
+                delete [] Array0;
+            }
+        }
+        // End of merge step
+        // End of merge sort
+
+    #else
+        // Gather the reduced result on master
+        #if SHOW_PROGRESS
+            if (rank==0) printf("Gather to master thread steps\n");
+        #endif
+        TotNbWords=0;
+        LocNbWords=reduceNb;
+        MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
+
+        if (rank==0){
+            for(int i=0;i<num_ranks;i++){
+                gatherRecvDsp[i]=TotNbWords;
+                TotNbWords+=gatherRecvCnt[i];
+            }
+            printf("%d words counted in total\n",TotNbWords);
+            gatherRcv = new KEYVAL[TotNbWords];
+        }
+        MPI_Gatherv(reduceAry,LocNbWords,
+                        MPI_KEYVAL,
+                        gatherRcv,gatherRecvCnt,gatherRecvDsp,
+                        MPI_KEYVAL,0,MPI_COMM_WORLD);
+
+        delete [] reduceAry;
+        delete [] gatherRecvDsp;
+        delete [] gatherRecvCnt;
+    #endif
+
+#if TIME_REPORT
+    reduceGatherStop = clock();
+#endif
+
+    #if WRITE_TO_FILE
+    // If too long, this step can be parallelized with MPI I/O
+        if (rank==0){
+            printf("Write to file step...\n");
+            // check if the file exists
+            if( remove( outputname ) != 0 ) perror( "Suppression of the previous output file." );
+            printf("Writing results to the file %s\n",outputname);
+            MPI_File fh_write;
+            MPI_File_open(MPI_COMM_SELF,outputname,(MPI_MODE_CREATE | MPI_MODE_WRONLY | MPI_MODE_APPEND),MPI_INFO_NULL,&fh_write);
+            char info[50];
+            int str_len;
+            #if SORT_RESULT
+                if (own_array==0){
+                    for(int i=0;i<ownLength;i++){
+                        str_len=sprintf(info,"%d; ",Array0[i].val);
+                        for(int j=0;j<Array0[i].key_len;j++){
+                            info[str_len]=Array0[i].key[j];
+                            str_len++;
+                        }
+                        info[str_len]='\n';
+                        str_len++;
+                        MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
+                    }
+                }
+                else{
+                    for(int i=0;i<ownLength;i++){
+                        str_len=sprintf(info,"%d; ",Array1[i].val);
+                        for(int j=0;j<Array1[i].key_len;j++){
+                            info[str_len]=Array1[i].key[j];
+                            str_len++;
+                        }
+                        info[str_len]='\n';
+                        str_len++;
+                        MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
+                    }
+                }
+            #else
+                for(int i=0;i<TotNbWords;i++){
+                    str_len=sprintf(info,"%d; ",gatherRcv[i].val);
+                    for(int j=0;j<gatherRcv[i].key_len;j++){
+                        info[str_len]=gatherRcv[i].key[j];
+                        str_len++;
+                    }
+                    info[str_len]='\n';
+                    str_len++;
+                    MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
+                }
+            #endif
+            MPI_File_close(&fh_write);
         }
     #endif
-    
+
+    // #if SHOW_RESULT
+    //     for(int i=0;i<TotNbWords;i++){
+    //         printf("<");
+    //         for(int j=0;j<gatherRcv[i].key_len;j++){
+    //             printf("%c",gatherRcv[i].key[j]);
+    //         }
+    //         printf(",%d>\n",gatherRcv[i].val);
+    //     }
+    // #endif
+
+    // deletion of remaning allocated arrays
+    #if (SORT_RESULT==0)
+        if (rank==0) delete [] gatherRcv;
+    #else
+        if (rank==0){
+            if (own_array==0) delete[] Array0;
+            else delete[] Array1;
+        }
+    #endif
+
     delete [] outputname;
-    if (rank==0) delete [] gatherRcv;
 
 
     #if SHOW_PROGRESS
-        if (rank==0) 
-            printf("Job done.\n", rank);
+        if (rank==0)
+            printf("Job done.\n");
     #endif
 
     #if TIME_REPORT
