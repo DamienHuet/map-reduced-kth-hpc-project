@@ -8,6 +8,9 @@
 void swap(KEYVAL* a, KEYVAL* b)
     {
         KEYVAL t;
+        // t.val=0;
+        // t.key_len=0;
+        // t.key[0]='\0';
 
         // Copy a in t
         t.val=a->val;
@@ -30,22 +33,24 @@ void swap(KEYVAL* a, KEYVAL* b)
     array, and places all smaller (smaller than pivot)
    to left of pivot and all greater elements to right
    of pivot */
-int partition (KEYVAL* arr, int low, int high)
+int partition (KEYVAL* arr, int low, int high, int rank)
 {
     int pivot = arr[high].val;    // pivot
     int i = (low - 1);  // Index of smaller element
+
+    // printf("rank=%d, low=%d, high=%d\n",rank,low,high);
 
     for (int j = low; j <= high- 1; j++)
     {
         // If current element is smaller than or
         // equal to pivot
-        if (arr[j].val > pivot)
+        if (arr[j].val >= pivot)
         {
             i++;    // increment index of smaller element
-            swap(arr+i, arr+j);
+            swap(&(arr[i]), &(arr[j]));
         }
     }
-    swap(arr+(i + 1), arr+high);
+    swap(&(arr[i + 1]), &(arr[high]));
     return (i + 1);
 }
 
@@ -53,19 +58,19 @@ int partition (KEYVAL* arr, int low, int high)
  arr[] --> Array to be sorted,
   low  --> Starting index,
   high  --> Ending index */
-void quickSort(KEYVAL* arr, int low, int high)
+void quickSort(KEYVAL* arr, int low, int high,int rank)
 {
     // printf("low=%d, high=%d\n",low,high);
     if (low < high)
     {
         /* pi is partitioning index, arr[p] is now
            at right place */
-        int pi = partition(arr, low, high);
+        int pi = partition(arr, low, high, rank);
 
         // Separately sort elements before
         // partition and after partition
-        quickSort(arr, low, pi - 1);
-        quickSort(arr, pi + 1, high);
+        quickSort(arr, low, pi - 1, rank);
+        quickSort(arr, pi + 1, high, rank);
     }
 }
 
@@ -143,7 +148,7 @@ int setCmdLineOptions(int nbArgs, char** Args, char* &fileName, char* &outputNam
 
 
 // Merges two sorted arrays in one array (this is NOT an inplace operation, so there are 3 arrays processed)
-void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merged_ary){
+void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merged_ary, int rank){
     int count_1=0;
     int count_2=0;
     int count_merged=0;
@@ -178,7 +183,7 @@ void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merge
         // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d, count_merged=%d, len_merged_ary=%d\n",count_1,len_ary1,count_2,len_ary2,count_merged,len_merged_ary);
         merged_ary[count_merged].val= ary1[count_1].val;
         merged_ary[count_merged].key_len=ary1[count_1].key_len;
-        // printf("ary1[%d].key_len=%d\n",count_1,ary1[count_1].key_len);
+        // printf("rank=%d, ary1[%d].key_len=%d\n",rank,count_1,ary1[count_1].key_len);
         for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
         if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
         else merged_ary[count_merged].key[WORD_LEN-1]='\0';
@@ -190,7 +195,7 @@ void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merge
         // printf("count_1=%d, len_ary1=%d, count_2=%d, len_ary2=%d, count_merged=%d, len_merged_ary=%d\n",count_1,len_ary1,count_2,len_ary2,count_merged,len_merged_ary);
         merged_ary[count_merged].val= ary2[count_2].val;
         merged_ary[count_merged].key_len=ary2[count_2].key_len;
-        // printf("ary2[%d].key_len=%d\n",count_2,ary2[count_2].key_len);
+        // printf("rank=%d, ary2[%d].key_len=%d\n",rank,count_2,ary2[count_2].key_len);
         for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
         if (merged_ary[count_merged].key_len<WORD_LEN) merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
         else merged_ary[count_merged].key[WORD_LEN-1]='\0';

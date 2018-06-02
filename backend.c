@@ -15,7 +15,7 @@
 //debug configuration
 #define DEBUG_ALL2ALL 0
 
-#define SORT_RESULT 0       //WARNING: NUMBER OF PROCESSED NEED TO BE 2^N !!! (soon corrected for any nb of processes)
+#define SORT_RESULT 1      //WARNING: NUMBER OF PROCESSED NEED TO BE 2^N !!! (soon corrected for any nb of processes)
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
 #define TIME_REPORT 0
@@ -296,9 +296,11 @@ int main(int argc, char** argv){
 
     #if SORT_RESULT     //WARNING: NUMBER OF PROCESSED NEED TO BE 2^N !!! (soon corrected for any nb of processes)
         // First, sort the lists on each process
-        quickSort(reduceAry,0,reduceNb-1);
+        // printf("rank=%d, reduceNb=%d\n",rank,reduceNb);
+        quickSort(reduceAry,0,reduceNb-1,rank);
+        // printf("rank=%d, out of quickSort\n",rank);
         MPI_Barrier(MPI_COMM_WORLD);
-        int k=1;
+        int k,l,N,A;
         int rcvLength=0;
         KEYVAL* rcvArray;
         KEYVAL* Array0;
@@ -306,7 +308,9 @@ int main(int argc, char** argv){
         int ownLength;
         ownLength=reduceNb;
         Array0 = new KEYVAL[1]; //just to be able to delete it in the coming while loop
+        // printf("Hello1 from rank%d\n",rank);
         Array1 = new KEYVAL[ownLength];
+        // printf("Hello2 from rank%d\n",rank);
         for(int i=0;i<ownLength;i++){
             Array1[i].key_len=reduceAry[i].key_len;
             Array1[i].val=reduceAry[i].val;
@@ -315,14 +319,23 @@ int main(int argc, char** argv){
         bool own_array=1;
         delete [] reduceAry;
         // MPI_Request req;
-        int N;
         N=(int) log2(num_ranks);
+        k=1;
+        A=0;
+        l=N;
+        while (  (A+(int)pow(2,l))<=rank  &&  l>0  ){
+            A+=(int)pow(2,l);
+            l-=1;
+        }
 
-        while ((rank%((int)pow(2,k))==0) && k<=N){
-            // printf("rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+        printf("Before while: rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
+
+        while (((rank-A)%((int)pow(2,k))==0) && ( (k<=l) || (k==l+1 && (num_ranks-A)>(int)pow(2,l)) )  && (num_ranks-1!=rank) ){
+        // while (   ((rank-A)%(int)pow(2,k)==0) && k<= l && num_ranks-A>0  ){
+            printf("rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
             MPI_Recv(&rcvLength,1,MPI_INT,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            // printf("rank=%d, rcvLength form %d is %d\n",rank,rank+((int)pow(2,k-1)),rcvLength);
+            printf("rank=%d, rcvLength form %d is %d\n",rank,rank+((int)pow(2,k-1)),rcvLength);
             rcvArray = new KEYVAL[rcvLength];
             if (own_array==1){
                 delete [] Array0;
@@ -333,36 +346,36 @@ int main(int argc, char** argv){
                 Array1 = new KEYVAL[ownLength+rcvLength];
             }
 
-            // printf("2. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            // printf("2. rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
 
             MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
 
-            // printf("3. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            // printf("3. rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
 
             if (own_array==1){
-                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                merge(rcvArray,rcvLength,Array1,ownLength,Array0,rank);
+                printf("4. rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
                 ownLength=ownLength+rcvLength;
                 delete [] rcvArray;
-                // printf("5. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                // printf("5. rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
                 own_array=0;
             }
             else{
-                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+                merge(rcvArray,rcvLength,Array0,ownLength,Array1,rank);
+                printf("4. rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
                 ownLength=ownLength+rcvLength;
                 delete [] rcvArray;
-                // printf("5. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
                 own_array=1;
             }
             k++;
         }
 
-        if ((rank%((int)pow(2,k))!=0)){
-            // printf("rank=%d, k=%d, N=%d, ownLength=%d, out of the while.\n",rank,k,N,ownLength);
+        // if ( ((rank-A)%((int)pow(2,k))!=0)  ){
+        if (rank!=0){
+            printf("Out of the while: rank=%d, k=%d, N=%d, l=%d, A=%d, ownLength=%d\n",rank,k,N,l,A,ownLength);
             MPI_Send(&ownLength,1,MPI_INT,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
-            // printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
+            printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
             // if ((own_array==1 && k==1) || (own_array==0 && k>1)){
             if (own_array==1){
                 MPI_Send(Array1,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
@@ -418,13 +431,25 @@ int main(int argc, char** argv){
             #if SORT_RESULT
                 if (own_array==0){
                     for(int i=0;i<ownLength;i++){
-                        str_len=sprintf(info,"%d; %s\n",Array0[i].val,Array0[i].key);
+                        str_len=sprintf(info,"%d; ",Array0[i].val);
+                        for(int j=0;j<Array0[i].key_len;j++){
+                            info[str_len]=Array0[i].key[j];
+                            str_len++;
+                        }
+                        info[str_len]='\n';
+                        str_len++;
                         MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
                     }
                 }
                 else{
                     for(int i=0;i<ownLength;i++){
-                        str_len=sprintf(info,"%d; %s\n",Array1[i].val,Array1[i].key);
+                        str_len=sprintf(info,"%d; ",Array1[i].val);
+                        for(int j=0;j<Array1[i].key_len;j++){
+                            info[str_len]=Array1[i].key[j];
+                            str_len++;
+                        }
+                        info[str_len]='\n';
+                        str_len++;
                         MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
                     }
             #else
@@ -434,6 +459,7 @@ int main(int argc, char** argv){
                 }
             #endif
             MPI_File_close(&fh_write);
+            }
         }
     #endif
 
