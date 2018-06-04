@@ -332,7 +332,7 @@ int main(int argc, char** argv){
         //          actual merge step.  ------ //
         MPI_Barrier(MPI_COMM_WORLD);
         #if SHOW_PROGRESS
-            if (rank==0) printf("Sort and merge steps...\n");
+            if (rank==0) printf("Sort and merge steps\n");
         #endif
         // First, sort the lists on each process
         quickSort(reduceAry,0,reduceNb-1);
@@ -358,10 +358,11 @@ int main(int argc, char** argv){
         k=1;
 
         MPI_Barrier(MPI_COMM_WORLD);
-        if (rank==0) printf("First allocations done.\n");
+        // if (rank==0) printf("First allocations done.\n");
 
         MPI_Comm* MPI_COMM_MERGERS;
-        MPI_COMM_MERGERS = new MPI_Comm[N+1];
+        MPI_COMM_MERGERS = new MPI_Comm[N+2];
+        for(int j=0;j<N+2;j++) MPI_COMM_MERGERS[j]=MPI_COMM_WORLD;
         if (rank<num_ranks%(int)pow(2,N)  &&  rank<(int)pow(2,N)){  //We create a communicator for the receiver-mergers ranks
             MPI_Comm_split(MPI_COMM_WORLD,0,rank,&MPI_COMM_MERGERS[0]);
         }
@@ -421,18 +422,18 @@ int main(int argc, char** argv){
         }
         // printf("Before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (rank==0) printf("Nb of processed brought to 2^N.\n");
+        // if (rank==0) printf("Nb of processed brought to 2^N.\n");
 
         MPI_COMM_MERGERS[k]=MPI_COMM_WORLD;
         if ((rank%((int)pow(2,k))==0) && (k<=N) && rank<(int)pow(2,N)){  //We create a communicator for the receiver-mergers ranks
-            MPI_Comm_split(MPI_COMM_WORLD,0,rank,&MPI_COMM_MERGERS[k+1]);
+            MPI_Comm_split(MPI_COMM_WORLD,0,rank,&(MPI_COMM_MERGERS[k+1]));
         }
-        else MPI_Comm_split(MPI_COMM_WORLD,MPI_UNDEFINED,rank,&MPI_COMM_MERGERS[k+1]);
+        else MPI_Comm_split(MPI_COMM_WORLD,MPI_UNDEFINED,rank,&(MPI_COMM_MERGERS[k+1]));
 
         //  Here the actual merge step begins, with exactly 2^N processes involved
         while ((rank%((int)pow(2,k))==0) && (k<=N) && rank<(int)pow(2,N) ){
-            MPI_Barrier(MPI_COMM_MERGERS[k]);
-            MPI_Comm_split(MPI_COMM_MERGERS[k],0,rank,&(MPI_COMM_MERGERS[k+1]));
+            // MPI_Barrier(MPI_COMM_MERGERS[k]);
+            MPI_Comm_split(MPI_COMM_MERGERS[k+1],0,rank,&(MPI_COMM_MERGERS[k+2]));
             // printf("rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
             MPI_Recv(&rcvLength,1,MPI_INT,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
@@ -448,7 +449,7 @@ int main(int argc, char** argv){
             }
             MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            MPI_Barrier(MPI_COMM_MERGERS[k+1]);
+            MPI_Barrier(MPI_COMM_MERGERS[k+2]);
             if (own_array==1){
                 merge(rcvArray,rcvLength,Array1,ownLength,Array0);
                 // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
@@ -466,8 +467,10 @@ int main(int argc, char** argv){
             k++;
         }
         if (rank!=0 && rank<(int)pow(2,N)){
-            MPI_Barrier(MPI_COMM_MERGERS[k]);
-            MPI_Comm_split(MPI_COMM_MERGERS[k],MPI_UNDEFINED,rank,&MPI_COMM_MERGERS[k+1]);
+            // MPI_Barrier(MPI_COMM_MERGERS[k]);
+            if ( rank%2==0 ) {
+                    MPI_Comm_split(MPI_COMM_MERGERS[k+1],MPI_UNDEFINED,rank,&(MPI_COMM_MERGERS[k+2]));
+            }
             // printf("Out of the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
             MPI_Send(&ownLength,1,MPI_INT,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
             // printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
@@ -483,7 +486,6 @@ int main(int argc, char** argv){
         // End of merge step
         // End of merge sort
         MPI_Barrier(MPI_COMM_WORLD);
-        delete [] MPI_COMM_MERGERS;
 
     #else
         // Gather the reduced result on master
@@ -516,17 +518,24 @@ int main(int argc, char** argv){
     reduceGatherStop = clock();
 #endif
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
     #if WRITE_TO_FILE
     // If too long, this step can be parallelized with MPI I/O
         if (rank==0){
-            printf("Write to file step...\n");
+            printf("Write to file step\n");
             // check if the file exists
-            if( remove( outputname ) != 0 ) perror( "Suppression of the previous output file." );
+            if( remove( outputname ) != 0 ){
+                perror( "Don't worry about this not found file message" );
+            }
             printf("Writing results to the file %s\n",outputname);
             MPI_File fh_write;
+            printf("Hi0\n");
             MPI_File_open(MPI_COMM_SELF,outputname,(MPI_MODE_CREATE | MPI_MODE_WRONLY | MPI_MODE_APPEND),MPI_INFO_NULL,&fh_write);
+            printf("Hi0.5\n");
             char info[50];
             int str_len;
+            printf("Hi1\n");
             #if SORT_RESULT
                 if (own_array==0){
                     for(int i=0;i<ownLength;i++){
@@ -552,6 +561,7 @@ int main(int argc, char** argv){
                         MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
                     }
                 }
+                printf("Hi2\n");
             #else
                 for(int i=0;i<TotNbWords;i++){
                     str_len=sprintf(info,"%d; ",gatherRcv[i].val);
@@ -588,7 +598,9 @@ int main(int argc, char** argv){
         }
     #endif
 
+    if (rank==0) printf("Hi3\n");
     delete [] outputname;
+    // delete [] MPI_COMM_MERGERS;
 
 
     #if SHOW_PROGRESS
