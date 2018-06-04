@@ -8,14 +8,12 @@
 #include "user_case.h"
 #include "toolbox.h"
 
-#define FILE_NAME "wikipedia_test_small.txt"
-#define BLOCKSIZE 1000
+#define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
 #define WRITE_PATH "words_output.csv"
-// #define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
-// #define BLOCKSIZE 67108864
-//debug configuration
+#define BLOCKSIZE 67108864
+//debug macro
 #define DEBUG_ALL2ALL 0
-
+//optional features macros
 #define SORT_RESULT 1
 #define SHOW_PROGRESS 1
 #define SHOW_RESULT 0
@@ -44,6 +42,16 @@ int main(int argc, char** argv){
     MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
     long int blocksize=BLOCKSIZE;
     // MPI_Request ReadFileScatReq;
+
+    if (rank==0) printf("\n");
+
+    bool sort=0;
+    if (SORT_RESULT){
+        if (num_ranks==(int)pow(2,(int)log2(num_ranks))) sort=1;
+        else{
+            if (rank==0) printf("WARNING: number n of processors need to be a power of 2 in order to sort the result. Result will NOT be sorted.\n");
+        }
+    }
 
     // get command line arguments
     char* filename;
@@ -106,18 +114,26 @@ int main(int argc, char** argv){
     MPI_Type_create_struct(3, blocklen, disp, type, &MPI_KEYVAL);
     MPI_Type_commit(&MPI_KEYVAL);
 
-    #if (SORT_RESULT==0)
-        // variables for gather (combine phase)
-        int TotNbWords;
-        int LocNbWords;
-        KEYVAL* gatherRcv;
-        int* gatherRecvCnt;
-        gatherRecvCnt = new int[num_ranks];
-        int* gatherRecvDsp;
-        gatherRecvDsp = new int[num_ranks];
-#endif
+    // variables for gather (combine phase)
+    int TotNbWords;
+    int LocNbWords;
+    KEYVAL* gatherRcv;
+    int* gatherRecvCnt;
+    gatherRecvCnt = new int[num_ranks];
+    int* gatherRecvDsp;
+    gatherRecvDsp = new int[num_ranks];
 
-    /***Initial and boardcast phase***/
+    //variables for merge sort
+    int N, k;
+    int rcvLength;
+    int ownLength;
+    bool own_array;
+    int send_to;
+    int recv_from;
+    KEYVAL* rcvArray;
+    KEYVAL* Array0;
+    KEYVAL* Array1;
+
     // variable for collective reading
     char* recver;
     MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_RDONLY,MPI_INFO_NULL,&fh);
@@ -128,16 +144,12 @@ int main(int argc, char** argv){
     MPI_Datatype contig, filetype;
     MPI_Type_contiguous(ColRdSize,MPI_CHAR,&contig);
     MPI_Type_create_resized(contig,0,ColRdExtent,&filetype);
-    // MPI_Type_commit(&contig);
     MPI_Type_commit(&filetype);
     recver=new char[ColRdSize];
     MPI_File_set_view(fh,ColRdDisp,MPI_CHAR,filetype,"native",MPI_INFO_NULL);
-    //Worst case scenario is there are one new word every two characters
-    // for(int i=0;i<file_size/(2*num_ranks);i++){
-    //     words[i].key_len=0;     //initializing the lengths of the words to zero
-    // }
 
 
+    /*** INITIAL READING PHASE ***/
     count_words=0;
     #if SHOW_PROGRESS
     if (rank==0){
@@ -150,28 +162,24 @@ int main(int argc, char** argv){
     #endif
 
 
-    int nbUsedProc;
+    int nbUsedProc;     //This is to deal with the end of the file: in the last step of the loop,
+                                        //there will potentially be less processors than the total number of them
     if (ColRdDisp-rank*ColRdSize>file_size-num_ranks*ColRdSize)
     {
         nbUsedProc=(file_size-ColRdDisp+rank*ColRdSize)/ColRdSize;
     }
     else nbUsedProc=num_ranks;
 
+    //Looping through the file
     while(nbUsedProc>0 && (ColRdDisp-rank*ColRdSize < file_size-file_size%(nbUsedProc*ColRdSize))){
-        /***input and scatter phase***/
         if (nbUsedProc==num_ranks){
             MPI_File_read_all(fh,recver,ColRdSize,MPI_CHAR,MPI_STATUS_IGNORE);
         }
         else{
             if (rank<nbUsedProc){
                 MPI_File_read(fh,recver,ColRdSize,MPI_CHAR,MPI_STATUS_IGNORE);
-                // printf("rank %d successfully read some stuff!\n",rank);
             }
         }
-        // Useful for the reading debugging
-            // printf("WHILE LOOP --- rank=%d, file size=%lld, ColRdExtent=%ld; ColRdDisp=%lld; ColRdSize=%ld; nbUsedProc=%d\n",rank,file_size,ColRdExtent,ColRdDisp,ColRdSize,nbUsedProc);
-            // for(int j=0;j<ColRdSize;j++) printf("%c",recver[j]);
-            // printf("\n");
         /***mapping and shift phase***/
         if (rank<nbUsedProc){
             lopEnd[1] = ColRdSize;
@@ -229,7 +237,7 @@ int main(int argc, char** argv){
     #endif
 
     #if SHOW_PROGRESS
-        if (rank==0) printf("All to all communication steps\n");
+        if (rank==0) printf("\nAll to all communication step\n");
     #endif
     ataSend = new KEYVAL[count_words];
     rankRecord = new int[count_words];
@@ -261,17 +269,6 @@ int main(int argc, char** argv){
         cntRcv+=ataRecvCnt[i];
     }
     atarecv = new KEYVAL[cntRcv];
-
-    #if 0
-    if(rank==2){
-        for(int i=0;i<num_ranks;i++){
-            printf("%d, %d, %d, %d \n", ataSendCnt[i], ataSendDsp[i], ataRecvCnt[i], ataRecvDsp[i]);
-            for(int j=0;j<ataSendCnt[i];j++){
-                printf("j=%d, key_len=%d\n",j, (ataSend+ataSendDsp[i]+j)->key_len);
-            }
-        }
-    }
-    #endif
 
     MPI_Alltoallv(ataSend, ataSendCnt, ataSendDsp,
                     MPI_KEYVAL,
@@ -307,7 +304,7 @@ int main(int argc, char** argv){
     #endif
 
     #if SHOW_PROGRESS
-        if (rank==0) printf("Reduce steps\n");
+        if (rank==0) printf("\nReduce step\n");
     #endif
     std::vector<KEYVAL> reduceVec;
     reduceVec.clear();
@@ -321,7 +318,7 @@ int main(int argc, char** argv){
     }
     reduceVec.clear();
 
-    #if SORT_RESULT
+    if (sort){
         //  ------ This is a parallel merge sort. Each process first locally sort its own array using a
         //          quickSort, then it sends its data to a process or lower rank that will perform a
         //          merge of the received array and its own array, until there is eventually only process
@@ -329,22 +326,19 @@ int main(int argc, char** argv){
         //          If the number of processes is not of the form 2^N, all processes of ranks higher than
         //          the highest power of 2 < num_ranks will send their data to processes of rank lower
         //          than this power of 2, and exit the sort step. This way, exactly 2^N perform the
-        //          actual merge step.  ------ //
+        //          actual merge step.  This merge sort for an arbitrary number of processes works
+        //          locally on our laptops but not on Beskow. It is then not used ------ //
 
         #if SHOW_PROGRESS
-            if (rank==0) printf("Sort and merge steps...\n");
+            if (rank==0) printf("\nSort and merge steps\n");
         #endif
 
         // First, sort the lists on each process
         quickSort(reduceAry,0,reduceNb-1);
-        int rcvLength=0;
-        int ownLength;
-        bool own_array=1;
-        int send_to=0;
-        int recv_from=0;
-        KEYVAL* rcvArray;
-        KEYVAL* Array0;
-        KEYVAL* Array1;
+        rcvLength=0;
+        own_array=1;
+        send_to=0;
+        recv_from=0;
         ownLength=reduceNb;
         Array0 = new KEYVAL[1]; //just to be able to delete it in the coming while loop
         Array1 = new KEYVAL[ownLength];
@@ -354,67 +348,67 @@ int main(int argc, char** argv){
             for(int j=0;j<reduceAry[i].key_len;j++) Array1[i].key[j]=reduceAry[i].key[j];
         }
         delete [] reduceAry;
-        int N,k;
         N=(int) log2(num_ranks);
         k=1;
 
-        // If there are some processes of rank >= 2^N, they send their data to processes of rank < 2^N
-        if (rank>=(int)pow(2,N)){
-            // printf("Sending before the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-            // send_to=rank%(num_ranks-(int)pow(2,N));
-            send_to=rank%(int)pow(2,N);
-            MPI_Send(&ownLength,1,MPI_INT,send_to,rank,MPI_COMM_WORLD);
-            // printf("rank=%d, ownLength sent to %d is %d\n",rank,send_to,ownLength);
-            if (own_array==1){
-                MPI_Send(Array1,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
-                delete [] Array1;
-            }
-            else{
-                MPI_Send(Array0,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
-                delete [] Array0;
-            }
-        }
-        // Receive from ranks higher than 2^N
-        if (rank<num_ranks%(int)pow(2,N)  &&  rank<(int)pow(2,N)){
-            recv_from=(int)pow(2,N)+rank;
-            // printf("Receiving before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-            MPI_Recv(&rcvLength,1,MPI_INT,recv_from,recv_from,
-                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            // printf("rank=%d, rcvLength form %d is %d\n",rank,recv_from,rcvLength);
-            rcvArray = new KEYVAL[rcvLength];
-            if (own_array==1){
-                delete [] Array0;
-                Array0 = new KEYVAL[ownLength+rcvLength];
-            }
-            else{
-                delete [] Array1;
-                Array1 = new KEYVAL[ownLength+rcvLength];
-            }
-            MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,recv_from,recv_from,
-                                MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            if (own_array==1){
-                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=0;
-            }
-            else{
-                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=1;
-            }
-        }
+        // --- The below commented part of the code deals with the mergesort for an arbitrary number
+        //      of processes. It works locally but not on beskow, so it is commented here.
+        // // If there are some processes of rank >= 2^N, they send their data to processes of rank < 2^N
+        // if (rank>=(int)pow(2,N)){
+        //     // printf("Sending before the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+        //     // send_to=rank%(num_ranks-(int)pow(2,N));
+        //     send_to=rank%(int)pow(2,N);
+        //     MPI_Send(&ownLength,1,MPI_INT,send_to,rank,MPI_COMM_WORLD);
+        //     // printf("rank=%d, ownLength sent to %d is %d\n",rank,send_to,ownLength);
+        //     if (own_array==1){
+        //         MPI_Send(Array1,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
+        //         delete [] Array1;
+        //     }
+        //     else{
+        //         MPI_Send(Array0,ownLength,MPI_KEYVAL,send_to,rank,MPI_COMM_WORLD);
+        //         delete [] Array0;
+        //     }
+        // }
+        // // Receive from ranks higher than 2^N
+        // if (rank<num_ranks%(int)pow(2,N)  &&  rank<(int)pow(2,N)){
+        //     recv_from=(int)pow(2,N)+rank;
+        //     // printf("Receiving before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+        //     MPI_Recv(&rcvLength,1,MPI_INT,recv_from,recv_from,
+        //                         MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        //     // printf("rank=%d, rcvLength form %d is %d\n",rank,recv_from,rcvLength);
+        //     rcvArray = new KEYVAL[rcvLength];
+        //     if (own_array==1){
+        //         delete [] Array0;
+        //         Array0 = new KEYVAL[ownLength+rcvLength];
+        //     }
+        //     else{
+        //         delete [] Array1;
+        //         Array1 = new KEYVAL[ownLength+rcvLength];
+        //     }
+        //     MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,recv_from,recv_from,
+        //                         MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        //     if (own_array==1){
+        //         merge(rcvArray,rcvLength,Array1,ownLength,Array0);
+        //         // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+        //         ownLength=ownLength+rcvLength;
+        //         delete [] rcvArray;
+        //         own_array=0;
+        //     }
+        //     else{
+        //         merge(rcvArray,rcvLength,Array0,ownLength,Array1);
+        //         // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+        //         ownLength=ownLength+rcvLength;
+        //         delete [] rcvArray;
+        //         own_array=1;
+        //     }
+        // }
         // printf("Before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
 
         //  Here the actual merge step begins, with exactly 2^N processes involved
         while ((rank%((int)pow(2,k))==0) && (k<=N) && rank<(int)pow(2,N) ){
-            // printf("rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            //Reveive the array length from higher ranked process
             MPI_Recv(&rcvLength,1,MPI_INT,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            // printf("rank=%d, rcvLength form %d is %d\n",rank,rank+((int)pow(2,k-1)),rcvLength);
             rcvArray = new KEYVAL[rcvLength];
             if (own_array==1){
                 delete [] Array0;
@@ -426,16 +420,15 @@ int main(int argc, char** argv){
             }
             MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            //End of reception phase. Now, we merge in a new array (allocated just above)
             if (own_array==1){
                 merge(rcvArray,rcvLength,Array1,ownLength,Array0);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
                 ownLength=ownLength+rcvLength;
                 delete [] rcvArray;
                 own_array=0;
             }
             else{
                 merge(rcvArray,rcvLength,Array0,ownLength,Array1);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
                 ownLength=ownLength+rcvLength;
                 delete [] rcvArray;
                 own_array=1;
@@ -443,9 +436,8 @@ int main(int argc, char** argv){
             k++;
         }
         if (rank!=0 && rank<(int)pow(2,N)){
-            // printf("Out of the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            //When a process has no more data to receive and to merge, it sends its data to a lower ranked process
             MPI_Send(&ownLength,1,MPI_INT,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
-            // printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
             if (own_array==1){
                 MPI_Send(Array1,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
                 delete [] Array1;
@@ -455,13 +447,12 @@ int main(int argc, char** argv){
                 delete [] Array0;
             }
         }
-        // End of merge step
         // End of merge sort
-
-    #else
+    }
+    else{       // If the result is not sorted, perform gather operation
         // Gather the reduced result on master
         #if SHOW_PROGRESS
-            if (rank==0) printf("Gather to master thread steps\n");
+            if (rank==0) printf("\nGather to master thread steps\n");
         #endif
         TotNbWords=0;
         LocNbWords=reduceNb;
@@ -483,24 +474,26 @@ int main(int argc, char** argv){
         delete [] reduceAry;
         delete [] gatherRecvDsp;
         delete [] gatherRecvCnt;
-    #endif
+    }
 
 #if TIME_REPORT
     reduceGatherStop = clock();
 #endif
 
     #if WRITE_TO_FILE
-    // If too long, this step can be parallelized with MPI I/O
         if (rank==0){
-            printf("Write to file step...\n");
+            printf("\nWrite to file step\n");
             // check if the file exists
-            if( remove( outputname ) != 0 ) perror( "Suppression of the previous output file." );
-            printf("Writing results to the file %s\n",outputname);
+            if( remove( outputname ) == 0 ){
+                printf("Suppression of the previous output file.\n" );
+            }
+            else printf("Don't worry about this \"No such file or directory\"\n");
+            printf("The output file is named %s\n",outputname);
             MPI_File fh_write;
             MPI_File_open(MPI_COMM_SELF,outputname,(MPI_MODE_CREATE | MPI_MODE_WRONLY | MPI_MODE_APPEND),MPI_INFO_NULL,&fh_write);
             char info[50];
             int str_len;
-            #if SORT_RESULT
+            if (sort){
                 if (own_array==0){
                     for(int i=0;i<ownLength;i++){
                         str_len=sprintf(info,"%d; ",Array0[i].val);
@@ -525,7 +518,8 @@ int main(int argc, char** argv){
                         MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
                     }
                 }
-            #else
+            }
+            else{
                 for(int i=0;i<TotNbWords;i++){
                     str_len=sprintf(info,"%d; ",gatherRcv[i].val);
                     for(int j=0;j<gatherRcv[i].key_len;j++){
@@ -536,20 +530,20 @@ int main(int argc, char** argv){
                     str_len++;
                     MPI_File_write(fh_write,info,str_len,MPI_CHAR,MPI_STATUS_IGNORE);
                 }
-            #endif
+            }
             MPI_File_close(&fh_write);
         }
     #endif
 
-    // #if SHOW_RESULT
-    //     for(int i=0;i<TotNbWords;i++){
-    //         printf("<");
-    //         for(int j=0;j<gatherRcv[i].key_len;j++){
-    //             printf("%c",gatherRcv[i].key[j]);
-    //         }
-    //         printf(",%d>\n",gatherRcv[i].val);
-    //     }
-    // #endif
+    #if SHOW_RESULT
+        for(int i=0;i<TotNbWords;i++){
+            printf("<");
+            for(int j=0;j<gatherRcv[i].key_len;j++){
+                printf("%c",gatherRcv[i].key[j]);
+            }
+            printf(",%d>\n",gatherRcv[i].val);
+        }
+    #endif
 
     // deletion of remaning allocated arrays
     #if (SORT_RESULT==0)
@@ -566,7 +560,7 @@ int main(int argc, char** argv){
 
     #if SHOW_PROGRESS
         if (rank==0)
-            printf("Job done.\n");
+            printf("\nJob done.\n\n");
     #endif
 
     #if TIME_REPORT
