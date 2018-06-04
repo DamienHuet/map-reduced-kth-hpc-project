@@ -62,26 +62,19 @@ void quickSort(KEYVAL* arr, int low, int high)
 
 
 // Merges two sorted arrays in one array (this is NOT an inplace operation, so there are 3 arrays processed)
-void merge(KEYVAL* ary1, int len_ary1, KEYVAL* ary2, int len_ary2, KEYVAL* merged_ary){
-    int count_1=0;
-    int count_2=0;
-    int count_merged=0;
-    while((len_ary1-count_1!=0) && (len_ary2-count_2!=0)){
-        if (ary1[count_1].val > ary2[count_2].val){
-            merged_ary[count_merged].val= ary1[count_1].val;
-            merged_ary[count_merged].key_len=ary1[count_1].key_len;
-            for(int j=0;j<ary1[count_1].key_len;j++) merged_ary[count_merged].key[j]=ary1[count_1].key[j];
-            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
-            count_1++;
-            count_merged++;
+void merge(KEYVAL* ary, int ownLen, int rcvLen){
+    int ownCnt=0;
+    int rcvCnt=0;
+    // int mergeCnt=0;
+    int totLen;
+    totLen=ownLen+rcvLen;
+    while (ownCnt<ownLen){
+        if (ary[ownCnt].val < ary[ownLen+rcvCnt].val){
+            ownCnt++
         }
         else{
-            merged_ary[count_merged].val= ary2[count_2].val;
-            merged_ary[count_merged].key_len=ary2[count_2].key_len;
-            for(int j=0;j<ary2[count_2].key_len;j++) merged_ary[count_merged].key[j]=ary2[count_2].key[j];
-            // merged_ary[count_merged].key[merged_ary[count_merged].key_len]='\0';
-            count_2++;
-            count_merged++;
+            swap(&(ary[ownCnt]),&(ary[ownLen+rcvCnt]));
+            rcvLen++;
         }
     }
     while (len_ary1-count_1!=0){

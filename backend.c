@@ -8,8 +8,8 @@
 #include "user_case.h"
 #include "toolbox.h"
 
-#define FILE_NAME "wikipedia_test_small.txt"
-#define BLOCKSIZE 1000
+#define FILE_NAME "../test_files/wikipedia_test_small.txt"
+#define BLOCKSIZE 100
 #define WRITE_PATH "words_output.csv"
 // #define FILE_NAME "/cfs/klemming/scratch/s/sergiorg/DD2356/input/wikipedia_10GB.txt"
 // #define BLOCKSIZE 67108864
@@ -115,7 +115,11 @@ int main(int argc, char** argv){
         gatherRecvCnt = new int[num_ranks];
         int* gatherRecvDsp;
         gatherRecvDsp = new int[num_ranks];
-#endif
+    #else
+        int LocNbWords;
+        int* gatherRecvCnt;
+        gatherRecvCnt = new int[num_ranks];
+    #endif
 
     /***Initial and boardcast phase***/
     // variable for collective reading
@@ -342,17 +346,22 @@ int main(int argc, char** argv){
         bool own_array=1;
         int send_to=0;
         int recv_from=0;
-        KEYVAL* rcvArray;
-        KEYVAL* Array0;
-        KEYVAL* Array1;
-        ownLength=reduceNb;
-        Array0 = new KEYVAL[1]; //just to be able to delete it in the coming while loop
-        Array1 = new KEYVAL[ownLength];
-        for(int i=0;i<ownLength;i++){
-            Array1[i].key_len=reduceAry[i].key_len;
-            Array1[i].val=reduceAry[i].val;
-            for(int j=0;j<reduceAry[i].key_len;j++) Array1[i].key[j]=reduceAry[i].key[j];
+        LocNbWords=reduceNb;
+        MPI_Allgather(&LocNbWords,1,MPI_INT,gatherRecvCnt,1,MPI_INT,MPI_COMM_WORLD);
+        // Find the maximum array size one thread will handle during the merge sort
+        int l=1;
+        while (rank%(int)pow(2,l)==0) l++;
+        int length_array=0;
+        for(int j=0;j<l;j++) length_array+=gatherRecvCnt[rank+j];
+        // Allocate an array of this length
+        KEYVAL* array;
+        array=new KEYVAL[length_array];
+        for(int i=0;i<reduceNb;i++){
+            Array[i].key_len=reduceAry[i].key_len;
+            Array[i].val=reduceAry[i].val;
+            for(int j=0;j<reduceAry[i].key_len;j++) Array[i].key[j]=reduceAry[i].key[j];
         }
+        ownLength=reduceNb;     // current effective array length (the rest of the array is garbage to be filled)
         delete [] reduceAry;
         int N,k;
         N=(int) log2(num_ranks);
@@ -381,31 +390,11 @@ int main(int argc, char** argv){
             MPI_Recv(&rcvLength,1,MPI_INT,recv_from,recv_from,
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
             // printf("rank=%d, rcvLength form %d is %d\n",rank,recv_from,rcvLength);
-            rcvArray = new KEYVAL[rcvLength];
-            if (own_array==1){
-                delete [] Array0;
-                Array0 = new KEYVAL[ownLength+rcvLength];
-            }
-            else{
-                delete [] Array1;
-                Array1 = new KEYVAL[ownLength+rcvLength];
-            }
-            MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,recv_from,recv_from,
+            MPI_Recv(array+ownLength,rcvLength,MPI_KEYVAL,recv_from,recv_from,
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            if (own_array==1){
-                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=0;
-            }
-            else{
-                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=1;
-            }
+            merge(array,ownLength,rcvLength);
+            // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            ownLength=ownLength+rcvLength;
         }
         // printf("Before while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
 
@@ -415,45 +404,19 @@ int main(int argc, char** argv){
             MPI_Recv(&rcvLength,1,MPI_INT,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
             // printf("rank=%d, rcvLength form %d is %d\n",rank,rank+((int)pow(2,k-1)),rcvLength);
-            rcvArray = new KEYVAL[rcvLength];
-            if (own_array==1){
-                delete [] Array0;
-                Array0 = new KEYVAL[ownLength+rcvLength];
-            }
-            else{
-                delete [] Array1;
-                Array1 = new KEYVAL[ownLength+rcvLength];
-            }
-            MPI_Recv(rcvArray,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
+            MPI_Recv(array+ownLength,rcvLength,MPI_KEYVAL,rank+((int)pow(2,k-1)),rank+((int)pow(2,k-1)),
                                 MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-            if (own_array==1){
-                merge(rcvArray,rcvLength,Array1,ownLength,Array0);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=0;
-            }
-            else{
-                merge(rcvArray,rcvLength,Array0,ownLength,Array1);
-                // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
-                ownLength=ownLength+rcvLength;
-                delete [] rcvArray;
-                own_array=1;
-            }
+            merge(array,ownLength,rcvLength);
+            // printf("4. rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
+            ownLength=ownLength+rcvLength;
             k++;
         }
         if (rank!=0 && rank<(int)pow(2,N)){
             // printf("Out of the while: rank=%d, k=%d, N=%d, ownLength=%d\n",rank,k,N,ownLength);
             MPI_Send(&ownLength,1,MPI_INT,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
             // printf("rank=%d, ownLength sent to %d is %d\n",rank,rank-((int)pow(2,k-1)),ownLength);
-            if (own_array==1){
-                MPI_Send(Array1,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
-                delete [] Array1;
-            }
-            else{
-                MPI_Send(Array0,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
-                delete [] Array0;
-            }
+            MPI_Send(array,ownLength,MPI_KEYVAL,rank-((int)pow(2,k-1)),rank,MPI_COMM_WORLD);
+            delete [] array;
         }
         // End of merge step
         // End of merge sort
